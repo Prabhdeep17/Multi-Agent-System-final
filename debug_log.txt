@@ -1,0 +1,116 @@
+Query: What are the main findings in section 3?
+Who are the authors of this paper?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 59, 'total_documents': 1, 'indexed_documents': ['business plan mod 1']}
+Doc filter: None
+
+Query: "What is this business plan about?" 
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 59, 'total_documents': 1, 'indexed_documents': ['business plan mod 1']}
+Doc filter: None
+
+Query: What is this business plan about?"
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 59, 'total_documents': 1, 'indexed_documents': ['business plan mod 1']}
+Doc filter: None
+
+Query: What is this business plan about?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 59, 'total_documents': 1, 'indexed_documents': ['business plan mod 1']}
+Doc filter: None
+
+Query: What evidence supports this claim across all documents?
+Consolidate all findings about topic X
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 59, 'total_documents': 1, 'indexed_documents': ['business plan mod 1']}
+Doc filter: None
+
+Query: What are the official office timings and flexibility options at AGL?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: What is this business plan about?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: How many leaves are allocated to a confirmed employee, and do they carry forward?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: How many leaves are allocated to a confirmed employee, and do they carry forward?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: What are the official office timings and flexibility options at AGL?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: What are the official office timings and flexibility options at AGL? 
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: What are the maternity leave entitlements for female employees?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: What are the maternity leave entitlements for female employees?
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: "If Friday is an official company holiday, and I take an unplanned/unapproved leave on the following Monday, how many days of leave will be deducted from my balance?"
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: can we do work from work
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: can we do work from home 
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 198, 'total_documents': 2, 'indexed_documents': ['AGL_HR_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: can we do work from home 
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 261, 'total_documents': 3, 'indexed_documents': ['AGL_HR_Policy', 'Hakuhodo_HR_and_Administration_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: if this company fake and not giving salaries 
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 261, 'total_documents': 3, 'indexed_documents': ['AGL_HR_Policy', 'Hakuhodo_HR_and_Administration_Policy', 'business plan mod 1']}
+Doc filter: None
+
+Query: tell em about theposh policy
+Top K: 5
+Evidence length: 5
+Vector Store Stats: {'total_chunks': 261, 'total_documents': 3, 'indexed_documents': ['AGL_HR_Policy', 'Hakuhodo_HR_and_Administration_Policy', 'business plan mod 1']}
+Doc filter: None
+

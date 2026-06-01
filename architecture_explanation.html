@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Dive: Multi-Agent PDF System Documentation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --secondary: #10b981;
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #cbd5e1;
+            --code-bg: #0b1120;
+            --border-color: #334155;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.7;
+            margin: 0;
+            padding: 0;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 3rem;
+            background: linear-gradient(to right, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 2rem;
+            color: #93c5fd;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-top: 50px;
+        }
+
+        p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        .flow-diagram {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px dashed #475569;
+            font-family: 'Fira Code', monospace;
+            color: #94a3b8;
+            white-space: pre;
+            overflow-x: auto;
+            line-height: 1.5;
+            margin-bottom: 30px;
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.95rem;
+            color: #e2e8f0;
+        }
+
+        .comment { color: #64748b; font-style: italic; }
+        .keyword { color: #c678dd; font-weight: bold; }
+        .string { color: #98c379; }
+        .function { color: #61afef; }
+
+        ul {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+        
+        li {
+            margin-bottom: 10px;
+        }
+
+        .file-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Masterclass: Multi-Agent Architecture</h1>
+        <p>The definitive technical deep dive. Code-level data flow, multi-agent reasoning, local vector embedding pipelines, and the pure chatbot UI structure.</p>
+    </header>
+
+    <h2>1. The Global Architecture Flow (V2: Pure Chatbot)</h2>
+    <div class="card">
+        <p>The system now operates as a sleek, edge-to-edge Chat UI. It strictly separates asynchronous data ingestion (sidebar) from the dynamic multi-agent reasoning graph (main window).</p>
+        
+        <div class="flow-diagram">
+[DATA INGESTION PHASE - Sidebar]
+User Uploads PDF  =>  app.py 
+                      ↓
+                  pdf_processor.py  (Splits PDF into 1000-char chunks via RecursiveCharacterTextSplitter)
+                      ↓
+               vector_store_manager.py (Runs local all-MiniLM-L6-v2 to convert text -> math vectors)
+                      ↓
+                  ChromaDB  (Saves vectors and exact page metadata locally)
+
+
+[MULTI-AGENT REASONING PHASE - Main UI]
+User Types in Chat  =>  app.py (handle_user_query triggers st.chat_input)
+                                      ↓
+                               planner.py (AgentOrchestrator)
+                                      ↓
+                      [IntentDetector queries Gemini-3-Flash-Preview]
+                                      ↓
+         Is it a QUERY? => YES => Routes to rag_agent.py
+         Is it a SUMMARY? => YES => Routes to summarization_agent.py
+                                      ↓
+                        Agent Queries ChromaDB for precise Evidence
+                                      ↓
+                     Agent Builds SystemMessage + HumanMessage Strict Prompt
+                                      ↓
+               Gemini Returns List/JSON Output => Safely Parsed to Python String
+                                      ↓
+                         Streamlit Appends Answer to Chat History
+        </div>
+    </div>
+
+    <h2>2. Complete Technical Code Breakdown</h2>
+
+    <!-- Config & Environment -->
+    <div class="card">
+        <span class="file-badge">.env & config.py</span>
+        <p><strong>The Foundation.</strong> The application dynamically loads API keys and models using <code>python-dotenv</code>. The <code>override=True</code> flag forces the app to prioritize the <code>.env</code> file over conflicting system environment variables.</p>
+        <pre><span class="comment"># config.py - Ensuring clean environment loading</span>
+<span class="keyword">import</span> os
+<span class="keyword">from</span> dotenv <span class="keyword">import</span> load_dotenv
+
+load_dotenv(override=<span class="keyword">True</span>)
+
+<span class="keyword">class</span> <span class="function">Config</span>:
+    LLM_PROVIDER = os.getenv(<span class="string">"LLM_PROVIDER"</span>, <span class="string">"google"</span>) <span class="comment"># Actively using Gemini</span>
+    LLM_MODEL = os.getenv(<span class="string">"LLM_MODEL"</span>, <span class="string">"gemini-3-flash-preview"</span>)
+    CHUNK_SIZE = <span class="keyword">int</span>(os.getenv(<span class="string">"CHUNK_SIZE"</span>, <span class="string">"1000"</span>))</pre>
+    </div>
+
+    <!-- The UI (app.py) -->
+    <div class="card">
+        <span class="file-badge">app.py</span>
+        <p><strong>The Pure Chat Canvas.</strong> The UI was deliberately gutted of complex split-screens and feature menus to achieve a 100% pure chatbot interface. Streamlit's reactive rendering is managed via <code>st.session_state</code> to ensure the chat history survives page reloads without resetting the database.</p>
+        <pre><span class="comment"># app.py - The streamlined chatbot logic</span>
+<span class="keyword">if not</span> st.session_state.processing_complete:
+    <span class="keyword">with</span> st.chat_message(<span class="string">"assistant"</span>):
+        st.markdown(<span class="string">"👋 Hello! Please upload your PDF documents in the sidebar."</span>)
+<span class="keyword">else</span>:
+    display_chat_history() <span class="comment"># Repaints previous memory on reload</span>
+    
+    <span class="comment"># Full-width chat input locked to the bottom of the screen</span>
+    <span class="keyword">if</span> query := st.chat_input(<span class="string">"Ask a question about your documents..."</span>):
+        handle_user_query(query) <span class="comment"># Hands off to the orchestrator</span></pre>
+    </div>
+
+    <!-- The Orchestrator (planner.py) -->
+    <div class="card">
+        <span class="file-badge">planner.py (AgentOrchestrator)</span>
+        <p><strong>The Traffic Cop.</strong> Unlike traditional basic chatbots, this uses an <code>IntentDetector</code>. Before acting, it evaluates exactly what the user is asking and routes them to the correct expert AI. This prevents hallucination when doing complex tasks.</p>
+        <pre><span class="comment"># Inside planner.py - The Gemini Payload Fix</span>
+messages = [
+    SystemMessage(content=<span class="string">"Determine if the user wants a SUMMARY, a QUERY, or a COMPARISON."</span>),
+    HumanMessage(content=query)
+]
+response = self.llm.invoke(messages)
+
+<span class="comment"># CRITICAL FIX: The Google GenAI library occasionally returns a List of dictionary objects </span>
+<span class="comment"># instead of a plain string. We securely parse the text payload to prevent UI crashes:</span>
+content = response.content
+<span class="keyword">if</span> isinstance(content, <span class="keyword">list</span>):
+    content = <span class="string">""</span>.join(item.get(<span class="string">"text"</span>) <span class="keyword">for</span> item <span class="keyword">in</span> content <span class="keyword">if</span> item.get(<span class="string">"type"</span>) == <span class="string">"text"</span>)
+intent_str = content.strip().upper()</pre>
+    </div>
+
+    <!-- Specialized Agents -->
+    <div class="card">
+        <span class="file-badge">agents/rag_agent.py & summarization_agent.py</span>
+        <p><strong>The Specialized Experts.</strong> After routing, these agents execute complex logic using the LLM utilities.</p>
+        <ul>
+            <li><strong>RAG Agent (rag_agent.py):</strong> Implements <i>Retrieval-Augmented Generation</i>. It searches ChromaDB for exact matching text chunks. It then forces Gemini to cite the exact source [1], ensuring absolutely no hallucinations.</li>
+            <li><strong>Summarization Agent (summarization_agent.py):</strong> Implements an enterprise <i>Map-Reduce</i> logic. An AI cannot memorize a 500-page book at once. This agent retrieves all chunks, loops through them to summarize them individually (MAP), and then sends those tiny summaries back to the LLM to merge them into one giant response (REDUCE).</li>
+        </ul>
+    </div>
+
+    <!-- Vector DB -->
+    <div class="card">
+        <span class="file-badge">vector_store_manager.py</span>
+        <p><strong>The Semantic Engine.</strong> We use <code>HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")</code>. It runs completely locally on your CPU—no data is sent to external clouds for indexing, saving thousands of API requests.</p>
+        <p>When the user asks "How much revenue is expected?", the vector store converts the query into math vectors, runs a <i>Cosine Similarity</i> algorithm against the chunks in ChromaDB, and fetches the top 5 most semantically relevant paragraphs instantly.</p>
+    </div>
+
+</div>
+</body>
+</html>
