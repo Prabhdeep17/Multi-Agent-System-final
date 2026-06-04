@@ -1,7 +1,13 @@
 langchain
 langchain-community
+langchain-core
+langchain-text-splitters
+langchain-huggingface
 langchain-google-genai
 langchain-groq
+langgraph
+faiss-cpu
+pandas
 streamlit
 python-dotenv
 pymupdf
@@ -19,3 +25,5 @@ sentence-transformers
 pillow
 pdf2image
 plotly
+torch
+torchvision
