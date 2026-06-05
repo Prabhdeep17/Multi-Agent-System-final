@@ -6,4 +6,12 @@ __pycache__/
 .streamlit/
 .vscode
 
+# Dynamic Session Data & Uploads
+sessions/
+session_docs/
+session_faiss/
+chroma_db_multi_agent/
 
+# Test Data
+*.xlsx
+*.csv
