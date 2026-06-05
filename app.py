@@ -1,640 +1,505 @@
-# """
-# Multi-Agent PDF Analysis System - Main Streamlit Application
-
-# Features:
-# - Multi-file PDF upload
-# - Natural language interaction
-# - Automatic agent routing
-# - Citation highlighting
-# - Document navigation
-# """
-# import streamlit as st
-# from pathlib import Path
-# import shutil
-# from datetime import datetime
-# from pdf_processor import PDFProcessor
-# from vector_store_manager import VectorStoreManager
-# from planner import AgentOrchestrator
-# from components.pdf_viewer import PDFViewer
-# from config import Config
-
-# # Page configuration
-# st.set_page_config(
-#     page_title="Multi-Agent PDF Analysis",
-#     page_icon="📚",
-#     layout="wide",
-#     initial_sidebar_state="expanded"
-# )
-
-# # Custom CSS
-# st.markdown("""
-# <style>
-#     .main-header {
-#         font-size: 2.5rem;
-#         font-weight: bold;
-#         color: #1f77b4;
-#         text-align: center;
-#         margin-bottom: 2rem;
-#     }
-#     .stChatMessage {
-#         background-color: #383a3e;
-#         color: #ffffff;
-#         border-radius: 10px;
-#         padding: 10px;
-#         margin-bottom: 10px;
-#     }
-#     .reasoning-trace {
-#         background-color: #e8f4f8;
-#         color: #000000;
-#         border-left: 4px solid #1f77b4;
-#         padding: 10px;
-#         margin: 10px 0;
-#         font-size: 0.9em;
-#     }
-# </style>
-# """, unsafe_allow_html=True)
-
-
-# def initialize_session_state():
-#     """Initialize session state variables"""
-#     if 'vector_store' not in st.session_state:
-#         st.session_state.vector_store = None
-#     if 'orchestrator' not in st.session_state:
-#         st.session_state.orchestrator = None
-#     if 'chat_history' not in st.session_state:
-#         st.session_state.chat_history = []
-#     if 'uploaded_docs' not in st.session_state:
-#         st.session_state.uploaded_docs = {}
-#     if 'active_pdf' not in st.session_state:
-#         st.session_state.active_pdf = None
-#     if 'active_page' not in st.session_state:
-#         st.session_state.active_page = 1
-#     if 'processing_complete' not in st.session_state:
-#         st.session_state.processing_complete = False
-
-
-# def initialize_system():
-#     """Initialize vector store and orchestrator"""
-#     if st.session_state.vector_store is None:
-#         with st.spinner("Initializing system..."):
-#             st.session_state.vector_store = VectorStoreManager()
-#             st.session_state.orchestrator = AgentOrchestrator(
-#                 st.session_state.vector_store
-#             )
-            
-#             # Auto-enable chat if DB already has documents
-#             stats = st.session_state.vector_store.get_stats()
-#             if stats.get('total_chunks', 0) > 0:
-#                 st.session_state.processing_complete = True
-                
-#         st.success("✅ System initialized successfully!")
-
-
-# def process_uploaded_pdfs(uploaded_files):
-#     """
-#     Process and index uploaded PDFs
-    
-#     Args:
-#         uploaded_files: List of uploaded file objects
-#     """
-#     if not uploaded_files:
-#         return
-    
-#     pdf_processor = PDFProcessor()
-    
-#     progress_bar = st.progress(0)
-#     status_text = st.empty()
-    
-#     for idx, uploaded_file in enumerate(uploaded_files):
-#         # Save uploaded file
-#         pdf_path = Path(Config.PDF_STORAGE_DIR) / uploaded_file.name
-        
-#         # Skip if already processed
-#         if uploaded_file.name in st.session_state.uploaded_docs:
-#             continue
-        
-#         status_text.text(f"Processing {uploaded_file.name}...")
-        
-#         # Save file
-#         with open(pdf_path, "wb") as f:
-#             f.write(uploaded_file.getbuffer())
-        
-#         try:
-#             # Process PDF
-#             result = pdf_processor.process_pdf(str(pdf_path))
-            
-#             # Index chunks
-#             index_result = st.session_state.vector_store.index_documents(
-#                 result['chunks']
-#             )
-            
-#             if index_result['status'] == 'success':
-#                 # Store in session state
-#                 st.session_state.uploaded_docs[uploaded_file.name] = {
-#                     'path': str(pdf_path),
-#                     'doc_name': result['doc_name'],
-#                     'page_count': result['pdf_info']['page_count'],
-#                     'chunks_indexed': index_result['chunks_indexed']
-#                 }
-                
-#                 status_text.success(f"✅ {uploaded_file.name} indexed successfully!")
-#             else:
-#                 status_text.error(f"❌ Error indexing {uploaded_file.name}")
-        
-#         except Exception as e:
-#             status_text.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
-        
-#         progress_bar.progress((idx + 1) / len(uploaded_files))
-    
-#     progress_bar.empty()
-#     status_text.empty()
-#     st.session_state.processing_complete = True
-
-
-# def display_chat_history():
-#     """Display chat history"""
-#     for message in st.session_state.chat_history:
-#         with st.chat_message(message["role"]):
-#             st.markdown(message["content"])
-            
-#             # Display reasoning trace if available
-#             if "reasoning_trace" in message and message["reasoning_trace"]:
-#                 with st.expander("🔍 Reasoning Trace"):
-#                     for step in message["reasoning_trace"]:
-#                         st.markdown(f"- {step}")
-            
-#             # Display agent chain if available
-#             if "agent_chain" in message and message["agent_chain"]:
-#                 st.caption(f"**Agent Chain:** {' → '.join(message['agent_chain'])}")
-
-
-# def handle_user_query(query: str):
-#     """
-#     Handle user query and generate response
-    
-#     Args:
-#         query: User query string
-#     """
-#     # Add user message to history
-#     st.session_state.chat_history.append({
-#         "role": "user",
-#         "content": query
-#     })
-    
-#     # Display user message
-#     with st.chat_message("user"):
-#         st.markdown(query)
-    
-#     # Generate response
-#     with st.chat_message("assistant"):
-#         with st.spinner("Processing..."):
-#             # Execute orchestrator
-#             result = st.session_state.orchestrator.execute(query)
-            
-#             # Display answer
-#             st.markdown(result["answer"])
-            
-#             # Display reasoning trace
-#             if result.get("reasoning_trace"):
-#                 with st.expander("🔍 Reasoning Trace"):
-#                     for step in result["reasoning_trace"]:
-#                         st.markdown(f"- {step}")
-            
-#             # Display agent chain
-#             if result.get("agent_chain"):
-#                 st.caption(f"**Agent Chain:** {' → '.join(result['agent_chain'])}")
-            
-#             # Add to history
-#             st.session_state.chat_history.append({
-#                 "role": "assistant",
-#                 "content": result["answer"],
-#                 "reasoning_trace": result.get("reasoning_trace", []),
-#                 "agent_chain": result.get("agent_chain", []),
-#                 "evidence": result.get("evidence", [])
-#             })
-            
-#             # Store evidence for citation viewer
-#             if result.get("evidence"):
-#                 st.session_state.last_evidence = result["evidence"]
-
-
-# def main():
-#     """Main application"""
-#     # Initialize
-#     initialize_session_state()
-#     initialize_system()
-    
-    
-    
-#     # Sidebar
-#     with st.sidebar:
-#         st.header("📁 Document Manager")
-        
-#         # File uploader
-#         uploaded_files = st.file_uploader(
-#             "Upload PDF documents",
-#             type=["pdf"],
-#             accept_multiple_files=True,
-#             key="pdf_uploader"
-#         )
-        
-#         # Process button
-#         if uploaded_files:
-#             if st.button("Process Documents", type="primary"):
-#                 initialize_system()
-#                 process_uploaded_pdfs(uploaded_files)
-        
-    
-#     # Main chat interface
-#     if not st.session_state.processing_complete:
-#         with st.chat_message("assistant"):
-#             st.markdown("👋 Hello! I am your Multi-Agent AI Assistant. Please upload your PDF documents in the sidebar so I can analyze them for you.")
-#     else:
-#         # Display chat history
-#         display_chat_history()
-        
-#         # Chat input is full width at the bottom
-#         if query := st.chat_input("Ask a question about your documents..."):
-#             handle_user_query(query)
-
-
-# if __name__ == "__main__":
-#     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 """
-Multi-Agent PDF Analysis System
+MultiAgent System (Dark Theme) - Session Manager
 """
 import streamlit as st
 from pathlib import Path
-from pdf_processor import PDFProcessor
-from vector_store_manager import VectorStoreManager
-from planner import AgentOrchestrator
-from config import Config
+from dotenv import load_dotenv
+import json
+import uuid
+import shutil
+from datetime import datetime
+
+load_dotenv(override=True)
 
 st.set_page_config(
-    page_title="DocMind — PDF Analysis",
-    page_icon="📄",
+    page_title="MultiAgent System",
+    page_icon="",
     layout="centered",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Lora:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
 
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 
-/* hide chrome */
-header[data-testid="stHeader"]  { display: none; }
-[data-testid="stSidebar"]        { display: none; }
-.stDeployButton                  { display: none; }
-footer                           { display: none; }
-#MainMenu                        { display: none; }
+/* Hide chrome */
+.stDeployButton, footer, #MainMenu { display: none; }
 
-/* page background */
-.stApp { background: #f7f7f5; }
+/* Dark app background */
+.stApp { background: #0f0f0f !important; }
+.block-container { max-width: 780px !important; padding: 36px 24px 120px !important; }
 
-/* centre column */
-.block-container {
-    max-width: 720px !important;
-    padding: 48px 24px 120px !important;
+/* All text in main area */
+.stApp p, .stApp span, .stApp label, .stApp div,
+.stApp h1, .stApp h2, .stApp h3, .stApp li { color: #e5e5e5 !important; }
+
+/* Sidebar — slightly lighter dark */
+[data-testid="stSidebar"] {
+    background: #161616 !important;
+    border-right: 1px solid #2a2a2a !important;
 }
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div { color: #cccccc !important; }
 
-/* ── top wordmark ── */
-.wordmark {
-    font-family: 'Lora', serif;
-    font-size: 18px;
-    color: #111;
-    letter-spacing: -0.2px;
-    margin-bottom: 40px;
-}
-.wordmark span { color: #999; font-style: italic; }
-
-/* ── upload card ── */
-.upload-card {
-    background: #ffffff;
-    border: 1px solid #e5e5e3;
-    border-radius: 12px;
-    padding: 32px;
-    text-align: center;
-    margin-bottom: 16px;
-}
-.upload-card .uc-title {
-    font-size: 17px;
-    font-weight: 500;
-    color: #111;
-    margin-bottom: 6px;
-}
-.upload-card .uc-sub {
-    font-size: 13px;
-    color: #999;
-    margin-bottom: 24px;
-}
-
-/* file uploader — strip default chrome */
-[data-testid="stFileUploader"] {
-    background: transparent !important;
-    border: none !important;
-}
-[data-testid="stFileUploaderDropzone"] {
-    background: #f7f7f5 !important;
-    border: 1.5px dashed #d1d1ce !important;
-    border-radius: 8px !important;
-    padding: 20px !important;
-}
-
-/* process button */
-.stButton > button {
-    background: #111 !important;
+[data-testid="stSidebar"] .stButton > button {
+    background: #2563eb !important;
     color: #fff !important;
     border: none !important;
     border-radius: 8px !important;
-    padding: 10px 28px !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
     width: 100% !important;
-    transition: opacity 0.15s !important;
+    font-weight: 500 !important;
+    padding: 10px !important;
 }
-.stButton > button:hover { opacity: 0.8 !important; }
-
-/* ── indexed doc pills ── */
-.doc-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: #fff;
-    border: 1px solid #e5e5e3;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #444;
-}
-.doc-row .dr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ── ready hint ── */
-.ready-hint {
-    text-align: center;
-    padding: 56px 0 8px;
-    font-size: 14px;
-    color: #bbb;
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #1d4ed8 !important;
 }
 
-/* ── chat bubbles ── */
-[data-testid="stChatMessage"]        { background: transparent !important; border: none !important; padding: 0 !important; }
-[data-testid="stChatMessageContent"] { background: transparent !important; }
-
-.u-bubble {
-    background: #111;
-    color: #f0f0ee;
-    border-radius: 18px 18px 4px 18px;
-    padding: 11px 16px;
-    font-size: 14px;
-    line-height: 1.6;
-    max-width: 540px;
-    margin-left: auto;
-    margin-bottom: 2px;
-}
-.a-bubble {
-    background: #fff;
-    border: 1px solid #e5e5e3;
-    border-radius: 4px 18px 18px 18px;
-    padding: 14px 18px;
-    font-size: 14px;
-    line-height: 1.7;
-    color: #222;
-    max-width: 620px;
-    margin-bottom: 2px;
-}
-.agent-chain {
-    font-size: 11px;
-    color: #bbb;
-    margin-top: 6px;
-    padding-left: 2px;
-}
-
-/* reasoning expander */
-[data-testid="stExpander"] {
-    background: #fff !important;
-    border: 1px solid #e5e5e3 !important;
-    border-radius: 8px !important;
-    margin-top: 6px !important;
-}
-[data-testid="stExpander"] summary { color: #aaa !important; font-size: 12px !important; }
-[data-testid="stExpander"] p       { color: #777 !important; font-size: 13px !important; }
-
-/* chat input */
-[data-testid="stChatInput"] {
-    background: #2a2b2f !important;
-    border: 1px solid #555 !important;
+/* Chat messages */
+[data-testid="stChatMessage"] {
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
     border-radius: 12px !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important;
+    padding: 14px 18px !important;
+    margin-bottom: 10px !important;
 }
-[data-testid="stChatInput"] textarea { font-size: 14px !important; color: #ffffff !important; }
-[data-testid="stChatInput"] textarea::placeholder { color: #888 !important; }
+[data-testid="stChatMessage"] p { color: #e5e5e5 !important; }
 
-/* spinner */
-.stSpinner > div { border-top-color: #111 !important; }
+/* Chat input */
+[data-testid="stChatInput"] {
+    background: #1a1a1a !important;
+    border: 1px solid #333 !important;
+    border-radius: 12px !important;
+}
+[data-testid="stChatInput"] textarea {
+    color: #e5e5e5 !important;
+    font-size: 14px !important;
+    background: transparent !important;
+}
+[data-testid="stChatInput"] textarea::placeholder { color: #666 !important; }
 
-/* progress bar */
-.stProgress > div > div { background: #111 !important; }
+/* Info / success / error boxes */
+[data-testid="stAlert"] {
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 10px !important;
+}
+[data-testid="stAlert"] p { color: #e5e5e5 !important; }
+
+/* Status widget */
+[data-testid="stStatusWidget"] {
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 10px !important;
+}
+[data-testid="stStatusWidget"] p,
+[data-testid="stStatusWidget"] span { color: #ccc !important; }
+
+/* Expanders */
+[data-testid="stExpander"] {
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 10px !important;
+}
+[data-testid="stExpander"] summary span { color: #ccc !important; }
+
+/* File uploader */
+[data-testid="stFileUploader"] {
+    background: #1a1a1a !important;
+    border: 1px dashed #333 !important;
+    border-radius: 10px !important;
+}
+[data-testid="stFileUploader"] p,
+[data-testid="stFileUploader"] span { color: #aaa !important; }
+
+/* Divider */
+hr { border-color: #2a2a2a !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0f0f0f; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+
+/* Meta tags */
+.meta-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.tag {
+    border-radius: 20px; padding: 3px 11px;
+    font-size: 11px; font-weight: 500; border: 1px solid;
+    font-family: 'DM Sans', sans-serif;
+}
+.tag-blue   { background: #1e3a5f; color: #93c5fd; border-color: #2563eb; }
+.tag-green  { background: #14291e; color: #6ee7b7; border-color: #16a34a; }
+.tag-yellow { background: #2d2010; color: #fcd34d; border-color: #d97706; }
+.tag-red    { background: #2d1010; color: #fca5a5; border-color: #dc2626; }
+.tag-gray   { background: #1f1f1f; color: #888; border-color: #333; }
+
+.page-title {
+    font-size: 26px;
+    font-weight: 600;
+    color: #f0f0f0 !important;
+    margin-bottom: 2px;
+}
+.page-sub {
+    font-size: 13px;
+    color: #666 !important;
+    margin-bottom: 28px;
+}
+/* Beautiful Shimmer Loading */
+.shimmer-text {
+    font-size: 15px;
+    font-weight: 500;
+    background: linear-gradient(90deg, #555 0%, #fff 50%, #555 100%);
+    background-size: 200% auto;
+    color: transparent;
+    -webkit-background-clip: text;
+    animation: shimmer 1.5s linear infinite;
+}
+@keyframes shimmer {
+    to { background-position: 200% center; }
+}
+
+/* Sidebar Active Button Outline */
+[data-testid="stSidebar"] button[kind="primary"] {
+    border: 2px solid #6c9fff !important;
+    box-shadow: 0 0 10px rgba(108, 159, 255, 0.4) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# ── Directories ───────────────────────────────────────────────────────────────
+SESSIONS_DIR = Path("./sessions")
+SESSIONS_DIR.mkdir(exist_ok=True)
+SESSION_DOCS_DIR = Path("./session_docs")
+SESSION_DOCS_DIR.mkdir(exist_ok=True)
+SESSION_FAISS_DIR = Path("./session_faiss")
+SESSION_FAISS_DIR.mkdir(exist_ok=True)
 
-# ── session state ─────────────────────────────────────────────────────────────
+# ── Session state ─────────────────────────────────────────────────────────────
+for k, v in {
+    "vector_store": None,
+    "langgraph_app": None,
+    "chat_history": [],
+    "loaded_pdfs": [],
+    "system_ready": False,
+    "active_session_id": None,
+    "uploader_key": 0
+}.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-def init_state():
-    for k, v in {
-        "vector_store": None,
-        "orchestrator": None,
-        "chat_history": [],
-        "uploaded_docs": {},
-        "processing_complete": False,
-    }.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def save_session_meta(session_id, meta):
+    with open(SESSIONS_DIR / f"{session_id}.json", "w") as f:
+        json.dump(meta, f)
+
+def load_all_sessions():
+    sessions = []
+    for f in SESSIONS_DIR.glob("*.json"):
+        with open(f, "r") as file:
+            sessions.append(json.load(file))
+    # Sort by created_at descending (newest first)
+    return sorted(sessions, key=lambda x: x.get("created_at", ""), reverse=True)
+
+def enforce_session_limit():
+    sessions = load_all_sessions()
+    if len(sessions) > 5:
+        # Delete the oldest sessions beyond 5
+        for s in sessions[5:]:
+            sid = s["id"]
+            (SESSIONS_DIR / f"{sid}.json").unlink(missing_ok=True)
+            shutil.rmtree(SESSION_DOCS_DIR / sid, ignore_errors=True)
+            shutil.rmtree(SESSION_FAISS_DIR / sid, ignore_errors=True)
+
+def update_session_history():
+    if st.session_state.active_session_id:
+        meta_file = SESSIONS_DIR / f"{st.session_state.active_session_id}.json"
+        if meta_file.exists():
+            with open(meta_file, "r") as f:
+                data = json.load(f)
+            data["history"] = st.session_state.chat_history
+            save_session_meta(st.session_state.active_session_id, data)
+
+def delete_session(session_id):
+    """Delete a session's metadata, documents, and FAISS index."""
+    (SESSIONS_DIR / f"{session_id}.json").unlink(missing_ok=True)
+    shutil.rmtree(SESSION_DOCS_DIR / session_id, ignore_errors=True)
+    shutil.rmtree(SESSION_FAISS_DIR / session_id, ignore_errors=True)
+    # If the deleted session was active, reset state
+    if st.session_state.active_session_id == session_id:
+        st.session_state.active_session_id = None
+        st.session_state.chat_history = []
+        st.session_state.loaded_pdfs = []
+        st.session_state.vector_store = None
+        st.session_state.langgraph_app = None
+        st.session_state.system_ready = False
+
+def switch_to_session(session_id):
+    meta_file = SESSIONS_DIR / f"{session_id}.json"
+    if not meta_file.exists(): return
+    with open(meta_file, "r") as f:
+        meta = json.load(f)
+        
+    st.session_state.active_session_id = session_id
+    st.session_state.chat_history = meta.get("history", [])
+    st.session_state.loaded_pdfs = meta.get("files", [])
+    
+    from vector_store import load_faiss_index
+    from agents_graph import build_graph
+    
+    faiss_path = str(SESSION_FAISS_DIR / session_id)
+    vs = load_faiss_index(faiss_path)
+    
+    st.session_state.vector_store = vs
+    st.session_state.langgraph_app = build_graph(vs, session_id)
+    st.session_state.system_ready = True
 
 
-def init_system():
-    if st.session_state.vector_store is None:
-        with st.spinner("Initialising…"):
-            st.session_state.vector_store = VectorStoreManager()
-            st.session_state.orchestrator = AgentOrchestrator(
-                st.session_state.vector_store
-            )
-            stats = st.session_state.vector_store.get_stats()
-            if stats.get("total_chunks", 0) > 0:
-                st.session_state.processing_complete = True
+def add_new_docs(uploaded_files):
+    from vector_store import build_faiss_index, load_and_chunk_docs
+    from agents_graph import build_graph
+    
+    # Generate a fixed sequential Session name to use as the session ID and Folder name
+    existing = load_all_sessions()
+    highest = 0
+    for s in existing:
+        title = s.get("title", "")
+        if title.startswith("Session "):
+            try:
+                num = int(title.replace("Session ", ""))
+                if num > highest: highest = num
+            except: pass
+    
+    session_number = highest + 1
+    session_id = f"Session_{session_number}"
+    chat_name = f"Session {session_number}"
+    
+    # Isolate storage for this specific session using the clean name
+    doc_dir = SESSION_DOCS_DIR / session_id
+    faiss_dir = SESSION_FAISS_DIR / session_id
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_names = []
+    for f in uploaded_files:
+        dest = doc_dir / f.name
+        dest.write_bytes(f.getbuffer())
+        file_names.append(f.name)
+        
+    # Build a fresh memory index JUST for these newly uploaded files
+    docs = load_and_chunk_docs(str(doc_dir))
+    if not docs:
+        vs = None
+    else:
+        vs = build_faiss_index(docs, str(faiss_dir))
+    
+    app = build_graph(vs, session_id)
+    
+    # Save the new session
+    meta = {
+        "id": session_id,
+        "title": chat_name,
+        "files": file_names,
+        "created_at": datetime.now().isoformat(),
+        "history": []
+    }
+    save_session_meta(session_id, meta)
+    
+    # Keep it at 5 max
+    enforce_session_limit()
+    
+    # Switch to the brand new session instantly
+    st.session_state.active_session_id = session_id
+    st.session_state.chat_history = []
+    st.session_state.loaded_pdfs = file_names
+    st.session_state.vector_store = vs
+    st.session_state.langgraph_app = app
+    st.session_state.system_ready = True
+    st.rerun()
 
 
-# ── PDF processing ────────────────────────────────────────────────────────────
+def render_meta(result: dict):
+    urgency = result.get("urgency", "medium")
+    urgency_cls = {"high": "tag-red", "medium": "tag-yellow", "low": "tag-green"}.get(urgency, "tag-yellow")
+    verified = "✅ Verified" if result.get("is_approved") else "⚠️ Corrected"
+    intent = result.get("intent", "").replace("_", " ").title()
+    chunks = result.get("retrieved_count", 0)
 
-def process_pdfs(uploaded_files):
-    if not uploaded_files:
-        return
-    processor = PDFProcessor()
-    bar = st.progress(0)
-    msg = st.empty()
-    for i, f in enumerate(uploaded_files):
-        if f.name in st.session_state.uploaded_docs:
-            continue
-        msg.text(f"Processing {f.name}…")
-        path = Path(Config.PDF_STORAGE_DIR) / f.name
-        with open(path, "wb") as fp:
-            fp.write(f.getbuffer())
-        try:
-            result = processor.process_pdf(str(path))
-            idx = st.session_state.vector_store.index_documents(result["chunks"])
-            if idx["status"] == "success":
-                st.session_state.uploaded_docs[f.name] = {
-                    "path": str(path),
-                    "doc_name": result["doc_name"],
-                    "page_count": result["pdf_info"]["page_count"],
-                }
-        except Exception as e:
-            msg.error(f"Error with {f.name}: {e}")
-        bar.progress((i + 1) / len(uploaded_files))
-    bar.empty()
-    msg.empty()
-    st.session_state.processing_complete = True
+    st.markdown(f"""
+    <div class="meta-row">
+        <span class="tag tag-blue">🎯 {intent}</span>
+        <span class="tag {urgency_cls}">⚡ {urgency.title()}</span>
+        <span class="tag tag-green">{verified}</span>
+        <span class="tag tag-gray">{chunks} chunks</span>
+    </div>
+    """, unsafe_allow_html=True)
 
+    if result.get("reviewer_notes") and result["reviewer_notes"] != "Accurate":
+        with st.expander("🔍 Reviewer Notes"):
+            st.markdown(result["reviewer_notes"])
+    if result.get("source_citations"):
+        with st.expander("📚 Sources"):
+            st.markdown(result["source_citations"])
 
-# ── chat ──────────────────────────────────────────────────────────────────────
 
 def render_history():
     for m in st.session_state.chat_history:
         with st.chat_message(m["role"]):
-            css = "u-bubble" if m["role"] == "user" else "a-bubble"
-            st.markdown(f'<div class="{css}">{m["content"]}</div>', unsafe_allow_html=True)
-            if m["role"] == "assistant":
-                if m.get("agent_chain"):
-                    st.markdown(
-                        f'<div class="agent-chain">{" · ".join(m["agent_chain"])}</div>',
-                        unsafe_allow_html=True,
-                    )
-                if m.get("reasoning_trace"):
-                    with st.expander("Reasoning trace"):
-                        for step in m["reasoning_trace"]:
-                            st.markdown(f"— {step}")
+            st.markdown(m["content"])
+            if m["role"] == "assistant" and m.get("meta"):
+                # Only show tags for document_search (RAG) queries
+                if m["meta"].get("intent") not in ["data_analysis", "general"]:
+                    render_meta(m["meta"])
 
 
 def handle_query(query: str):
+    from agents_graph import run_query
+
     st.session_state.chat_history.append({"role": "user", "content": query})
     with st.chat_message("user"):
-        st.markdown(f'<div class="u-bubble">{query}</div>', unsafe_allow_html=True)
+        st.markdown(query)
+
     with st.chat_message("assistant"):
-        with st.spinner(""):
-            result = st.session_state.orchestrator.execute(query)
-        st.markdown(f'<div class="a-bubble">{result["answer"]}</div>', unsafe_allow_html=True)
-        if result.get("agent_chain"):
-            st.markdown(
-                f'<div class="agent-chain">{" · ".join(result["agent_chain"])}</div>',
-                unsafe_allow_html=True,
-            )
-        if result.get("reasoning_trace"):
-            with st.expander("Reasoning trace"):
-                for step in result["reasoning_trace"]:
-                    st.markdown(f"— {step}")
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": result["answer"],
-            "reasoning_trace": result.get("reasoning_trace", []),
-            "agent_chain": result.get("agent_chain", []),
-        })
+        with st.status("Running pipeline…", expanded=True) as status:
+            try:
+                result = None
+                for event in run_query(
+                    st.session_state.langgraph_app,
+                    query,
+                    chat_history=st.session_state.chat_history,
+                ):
+                    if "status" in event:
+                        status.update(label=event["status"])
+                        st.markdown(f"✅ {event['status']}")
+                    elif "final_answer" in event:
+                        result = event
+                status.update(label="Done", state="complete", expanded=False)
+            except Exception as e:
+                status.update(label="Error", state="error")
+                st.error(str(e))
+                return
+
+        st.markdown(result["final_answer"])
+        # Only show tags for document_search (RAG) queries
+        if result.get("intent") not in ["data_analysis", "general"]:
+            render_meta(result)
+
+    st.session_state.chat_history.append({
+        "role": "assistant",
+        "content": result["final_answer"],
+        "meta": result,
+    })
+    
+    # Save the updated history for this session to disk!
+    update_session_history()
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
+if "initialized" not in st.session_state:
+    st.session_state.initialized = True
+    if not st.session_state.active_session_id:
+        sessions = load_all_sessions()
+        if sessions:
+            switch_to_session(sessions[0]["id"])
 
-def main():
-    init_state()
-    init_system()
 
-    # wordmark
-    st.markdown('<div class="wordmark">Multi-Agent System</div>', unsafe_allow_html=True)
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 🤖 Multi Agent System")
+    
+    st.markdown("**Upload Documents**")
+    uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}")
+    if uploaded and st.button("Upload & Chat", key="btn_upload_chat"):
+        add_new_docs(uploaded)
+        
+    st.caption("(Maintaining last 5 sessions on each uploaded set of files)")
 
-    # ── upload zone (always visible until docs are loaded) ──
-    if not st.session_state.processing_complete:
-        st.markdown("""
-        <div class="upload-card">
-            <div class="uc-title">Upload your documents</div>
-            <div class="uc-sub">PDF files only — multiple files supported</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        uploaded_files = st.file_uploader(
-            "pdf",
-            type=["pdf"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-        )
-
-        if uploaded_files:
-            if st.button("Analyse documents"):
-                init_system()
-                process_pdfs(uploaded_files)
-
+    st.divider()
+    
+    st.markdown("### Recent Sessions")
+    all_sessions = load_all_sessions()
+    
+    if not all_sessions:
+        st.markdown("<span style='color:#888; font-size:13px;'>No sessions yet. Upload a document to begin.</span>", unsafe_allow_html=True)
     else:
-        # ── indexed doc list (compact, no numbers) ──
-        for name in st.session_state.uploaded_docs:
-            st.markdown(
-                f'<div class="doc-row">📄 <span class="dr-name">{name}</span></div>',
-                unsafe_allow_html=True,
-            )
+        for idx, s in enumerate(all_sessions):
+            is_active = st.session_state.active_session_id == s["id"]
+            # Keep the name permanently fixed to whatever it was originally created as
+            base_label = s.get("title", f"Session {len(all_sessions) - idx}")
+            label = f"🟢 {base_label}" if is_active else base_label
+            
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                # Active session is a primary (colored) button, inactive are secondary (gray)
+                if st.button(label, key=f"sel_{idx}_{s['id'][:8]}", use_container_width=True, type="primary" if is_active else "secondary"):
+                    if not is_active:
+                        switch_to_session(s["id"])
+                        st.rerun()
+            with col2:
+                if st.button("−", key=f"del_{idx}_{s['id'][:8]}", help="Delete this session"):
+                    delete_session(s["id"])
+                    remaining = load_all_sessions()
+                    if remaining:
+                        switch_to_session(remaining[0]["id"])
+                    st.rerun()
 
-        # allow adding more docs
-        with st.expander("+ Add more documents"):
-            more = st.file_uploader(
-                "pdf2",
-                type=["pdf"],
-                accept_multiple_files=True,
-                label_visibility="collapsed",
-            )
-            if more and st.button("Process"):
-                process_pdfs(more)
+    st.divider()
 
-        # ── conversation ──
-        if not st.session_state.chat_history:
-            st.markdown('<div class="ready-hint">Ask anything about your documents</div>', unsafe_allow_html=True)
-        else:
-            render_history()
+# ── Main area ─────────────────────────────────────────────────────────────────
+if not st.session_state.system_ready:
+    st.markdown("""
+    <div class="gemini-greeting" style="text-align: center; margin-top: 10vh;">
+        <div style="font-size: 38px; font-weight: 500; background: -webkit-linear-gradient(45deg, #7cacf8, #e0949d, #b993ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1.3;">
+            Ask questions about your uploaded documents
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
 
-        if query := st.chat_input("Ask a question…"):
-            handle_query(query)
+if st.session_state.loaded_pdfs:
+    files_str = ", ".join(st.session_state.loaded_pdfs)
+    st.markdown(f"""
+    <style>
+    .file-pill {{
+        background-color: rgba(24, 24, 37, 0.4);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(137, 180, 250, 0.3); 
+        padding: 4px 12px; 
+        border-radius: 8px; font-size: 11px; font-weight: 500; color: #bac2de; 
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; max-width: 200px;
+        display: inline-block; transition: max-width 0.3s ease, background-color 0.2s ease;
+        cursor: default;
+    }}
+    .file-pill:hover {{
+        max-width: 90vw;
+        background-color: rgba(30, 30, 46, 0.95);
+        white-space: normal;
+        word-wrap: break-word;
+    }}
+    </style>
+    <div style='position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 999999; text-align: center;'>
+        <span class='file-pill'>
+            Active Files: {files_str}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
+render_history()
 
-if __name__ == "__main__":
-    main()
+greeting_placeholder = st.empty()
+
+if not st.session_state.chat_history:
+    greeting_placeholder.markdown("""
+    <div class="gemini-greeting" style="text-align: center; margin-top: 10vh;">
+        <div style="font-size: 38px; font-weight: 500; background: -webkit-linear-gradient(45deg, #7cacf8, #e0949d, #b993ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1.3;">
+            Ask questions about your uploaded documents
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+if query := st.chat_input("Ask a question about your documents…"):
+    greeting_placeholder.empty()
+    handle_query(query)

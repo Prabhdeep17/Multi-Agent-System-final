@@ -1,29 +1,28 @@
+# MultiAgent System — Python 3.10+ (use: python -m pip install -r requirements.txt)
+# Streamlit runs on Python 3.10 on this machine; install with that interpreter.
+
+# UI
+streamlit
+python-dotenv
+
+# LangChain / LangGraph (app.py, agents_graph.py, vector_store.py)
 langchain
-langchain-community
 langchain-core
+langchain-community
 langchain-text-splitters
 langchain-huggingface
 langchain-google-genai
-langchain-groq
 langgraph
-faiss-cpu
-pandas
-streamlit
-python-dotenv
-pymupdf
-qdrant-client
-langchain-qdrant
-requests
+langchain-experimental
 
-mistralai
-fastapi
-uvicorn[standard]
-python-multipart
-chromadb
-langchain-chroma
+# Vector store & embeddings
+faiss-cpu
 sentence-transformers
-pillow
-pdf2image
-plotly
-torch
-torchvision
+
+# Document loaders
+pypdf
+
+# Data / tabular (CSV + Excel via pandas)
+pandas
+numpy
+openpyxl
