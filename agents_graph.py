@@ -519,7 +519,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
         
         # Security Sandbox: Restrict execution environment to prevent 'import os' attacks
         def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
-            allowed = ['pandas', 'numpy', 'datetime', 're', 'math', 'collections']
+            allowed = ['pandas', 'numpy', 'datetime', 're', 'math', 'collections', 'json']
             if name in allowed or name.split('.')[0] in allowed:
                 return __import__(name, globals, locals, fromlist, level)
             raise ImportError(f"Importing '{name}' is strictly forbidden by the security sandbox.")
