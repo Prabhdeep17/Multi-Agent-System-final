@@ -456,17 +456,14 @@ with st.sidebar:
     
     if uploaded:
         current_file_names = sorted([f.name for f in uploaded])
-        if current_file_names == st.session_state.last_processed_files:
-            pass  # Hide button, message is in the chat window
-        else:
-            if st.button("Upload & Chat", key="btn_upload_chat"):
-                if not st.session_state.get("api_key"):
-                    msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**"
-                    st.session_state.chat_history.append({"role": "assistant", "content": msg, "meta": {"intent": "system"}})
-                    st.rerun()
-                else:
-                    st.session_state.last_processed_files = current_file_names
-                    add_new_docs(uploaded)
+        if st.button("Upload & Chat", key="btn_upload_chat"):
+            if not st.session_state.get("api_key"):
+                msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**"
+                st.session_state.chat_history.append({"role": "assistant", "content": msg, "meta": {"intent": "system"}})
+                st.rerun()
+            else:
+                st.session_state.last_processed_files = current_file_names
+                add_new_docs(uploaded)
         
     st.caption("(Maintaining last 5 sessions on each uploaded set of files)")
 
