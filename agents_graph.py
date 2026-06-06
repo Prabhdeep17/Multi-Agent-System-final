@@ -290,7 +290,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
     tone = "clear and urgent" if state.get("urgency") == "high" else "professional and helpful"
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"- There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly attribute which information comes from which specific file in your sentences (e.g., 'According to policy.pdf...'). Make it obvious which file provided which fact.\n"
+        file_rule = f"- STRICT RULE FOR MULTIPLE FILES ({', '.join(state['uploaded_files'])}): NEVER group or list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of data you provide (e.g., 'Revenue grew by 10% (Source: data.csv)'). Failure to cite the specific file for each fact is unacceptable.\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "- There is only one file uploaded. Do NOT mention its name.\n"
     else:
@@ -656,7 +656,7 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
         feedback_str = f"CRITIC REJECTION - YOU HALLUCINATED: {state['data_critic_feedback']}\nYou MUST rewrite your answer without inventing facts. If you don't have the data, state that you don't have it.\n\n"
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"4. EXPLICIT FILE NAMES: There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly mention which specific file provided the data you are analyzing (e.g., 'Based on sales.csv...'). Make it obvious which file provided which numbers.\n"
+        file_rule = f"4. STRICT FILE CITATIONS ({', '.join(state['uploaded_files'])}): NEVER list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of data you provide (e.g., 'Revenue grew by 10% (Source: data.csv)'). Failure to cite the specific file for each metric is unacceptable.\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "4. EXPLICIT FILE NAMES: There is only one file uploaded. Do NOT mention its name in your answer.\n"
     else:
@@ -780,7 +780,7 @@ def conversational_agent(state: PolicyState, session_id: str = None) -> PolicySt
             history_messages.append(AIMessage(content=content))
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"If the user's question relates to the uploaded files, you MUST explicitly state the specific file name when giving an answer (e.g., 'Based on policy.docx, you can...'). Make it obvious which file provided the information.\n"
+        file_rule = f"STRICT RULE FOR MULTIPLE FILES ({', '.join(state['uploaded_files'])}): NEVER list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of info you provide (e.g., 'You have 5 vacation days (Source: policy.docx)').\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "If the user's question relates to the uploaded files, do NOT mention the file name.\n"
     else:
