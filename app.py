@@ -289,8 +289,9 @@ def add_new_docs(uploaded_files):
         dest.write_bytes(f.getbuffer())
         file_names.append(f.name)
         
+    api_key = st.session_state.get("api_key")
     # Build a fresh memory index JUST for these newly uploaded files
-    docs = load_and_chunk_docs(str(doc_dir))
+    docs = load_and_chunk_docs(str(doc_dir), session_id=session_id, api_key=api_key)
     if not docs:
         vs = None
     else:
@@ -430,7 +431,7 @@ with st.sidebar:
     if "last_processed_files" not in st.session_state:
         st.session_state.last_processed_files = []
         
-    uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.get('uploader_key', 1)}")
+    uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls", "docx", "txt"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.get('uploader_key', 1)}")
     
     if uploaded:
         current_file_names = sorted([f.name for f in uploaded])

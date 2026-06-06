@@ -21,6 +21,10 @@ sentence-transformers
 
 # Document loaders
 pypdf
+pymupdf
+pdfplumber
+python-docx
+Pillow
 
 # Data / tabular (CSV + Excel via pandas)
 pandas

@@ -65,20 +65,14 @@ def _load_csv_with_fallback(file_path: Path) -> List[Document]:
             print(f"Total failure loading CSV {file_path}: {inner_e}")
             return []
 
-def load_and_chunk_docs(data_dir: str = DATA_DIR) -> List:
+def load_and_chunk_docs(data_dir: str = DATA_DIR, session_id: str = None, api_key: str = None) -> List:
     """
-    Load all PDFs and CSVs from the given directory and split into chunks.
-
-    Args:
-        data_dir: Path to directory containing files
-
-    Returns:
-        List of LangChain Document objects with metadata
+    Load all files, run them through multimodal processor to extract tables/images,
+    and split text into FAISS chunks.
     """
     path = Path(data_dir)
     if not path.exists():
         path.mkdir(parents=True, exist_ok=True)
-        print(f"Created documents directory at: {path.absolute()}")
         return []
 
     splitter = RecursiveCharacterTextSplitter(
@@ -88,39 +82,39 @@ def load_and_chunk_docs(data_dir: str = DATA_DIR) -> List:
     )
 
     all_docs = []
-    files = list(path.glob("*.pdf")) + list(path.glob("*.csv")) + list(path.glob("*.xlsx")) + list(path.glob("*.xls"))
+    # Include docx and txt now
+    files = list(path.glob("*.*"))
 
     if not files:
-        print(f"No valid files found in {data_dir}")
         return []
+
+    from multimodal_processor import process_document
 
     for file_path in files:
         ext = file_path.suffix.lower()
         
-        # Skip FAISS indexing for ALL tabular datasets (to prevent CPU freezing)
-        # Tabular data is handled exclusively by the Pandas Data Agent now.
+        # We skip vector embeddings for tables, but the multimodal_processor
+        # will convert PDF tables into CSVs in this folder. We don't want to
+        # embed those CSVs either.
         if ext in [".csv", ".xlsx", ".xls"]:
-            print(f"  Skipping FAISS for tabular file: {file_path.name}")
             continue
 
-        print(f"  Loading: {file_path.name}")
-        if ext == ".csv":
-            pages = _load_csv_with_fallback(file_path)
-        elif ext in [".xlsx", ".xls"]:
-            pages = _load_excel(file_path)
-        else:
-            loader = PyPDFLoader(str(file_path))
-            pages = loader.load()
+        if ext not in [".pdf", ".docx", ".doc", ".txt"]:
+            continue
 
-        # Tag every chunk with the source document name
-        chunks = splitter.split_documents(pages)
-        for chunk in chunks:
-            chunk.metadata["source_file"] = file_path.name
+        print(f"  Multimodal Processing: {file_path.name}")
+        text_content = process_document(str(file_path), session_id or "default", api_key)
+        
+        if not text_content.strip():
+            continue
 
+        # Wrap raw text into a Langchain Document
+        doc = Document(page_content=text_content, metadata={"source_file": file_path.name})
+        chunks = splitter.split_documents([doc])
+        
         all_docs.extend(chunks)
         print(f"  >> {len(chunks)} chunks from {file_path.name}")
 
-    print(f"\nTotal chunks created: {len(all_docs)}")
     return all_docs
 
 
@@ -160,22 +154,15 @@ def load_faiss_index(index_path: str = FAISS_INDEX_PATH):
     return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
 
 
-def get_or_build_index(data_dir: str = DATA_DIR, index_path: str = FAISS_INDEX_PATH):
+def get_or_build_index(data_dir: str = DATA_DIR, index_path: str = FAISS_INDEX_PATH, session_id: str = None, api_key: str = None):
     """
     Load existing index or build a new one from documents.
-
-    Args:
-        data_dir: Directory containing documents
-        index_path: Path to save/load the FAISS index
-
-    Returns:
-        FAISS vector store instance
     """
     existing = load_faiss_index(index_path)
     if existing:
         return existing
 
-    docs = load_and_chunk_docs(data_dir)
+    docs = load_and_chunk_docs(data_dir, session_id, api_key)
     if not docs:
         print(f"No textual documents found for FAISS in '{data_dir}/'. Returning None.")
         return None
@@ -219,23 +206,19 @@ def search_documents(
 def add_documents_to_index(
     vector_store,
     file_paths: List[str],
+    session_id: str = None,
+    api_key: str = None,
     index_path: str = FAISS_INDEX_PATH
 ):
     """
     Add new documents to an existing FAISS index.
-
-    Args:
-        vector_store: Existing FAISS vector store
-        file_paths: List of absolute paths to new files
-        index_path: Where to save the updated index
-
-    Returns:
-        Updated FAISS vector store
     """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP
     )
+
+    from multimodal_processor import process_document
 
     new_docs = []
     for path in file_paths:
@@ -243,22 +226,22 @@ def add_documents_to_index(
         ext = file_path.suffix.lower()
         
         if ext in [".csv", ".xlsx", ".xls"]:
-            print(f"  Skipping FAISS for tabular file: {file_path.name}")
             continue
-        
-        if ext == ".csv":
-            pages = _load_csv_with_fallback(file_path)
-        elif ext in [".xlsx", ".xls"]:
-            pages = _load_excel(file_path)
-        else:
-            loader = PyPDFLoader(str(file_path))
-            pages = loader.load()
             
-        chunks = splitter.split_documents(pages)
-        for chunk in chunks:
-            chunk.metadata["source_file"] = file_path.name
+        if ext not in [".pdf", ".docx", ".doc", ".txt"]:
+            continue
+            
+        print(f"  Multimodal Processing (Add): {file_path.name}")
+        text_content = process_document(str(file_path), session_id or "default", api_key)
+        
+        if not text_content.strip():
+            continue
+            
+        doc = Document(page_content=text_content, metadata={"source_file": file_path.name})
+        chunks = splitter.split_documents([doc])
         new_docs.extend(chunks)
 
-    vector_store.add_documents(new_docs)
-    vector_store.save_local(index_path)
+    if new_docs:
+        vector_store.add_documents(new_docs)
+        vector_store.save_local(index_path)
     return vector_store
