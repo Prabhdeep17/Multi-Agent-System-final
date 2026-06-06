@@ -45,7 +45,7 @@ def _describe_image_with_gemini(pil_img, api_key: str) -> str:
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
         
         llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-3-flash-preview",
             google_api_key=api_key,
             temperature=0.2,
             max_retries=1

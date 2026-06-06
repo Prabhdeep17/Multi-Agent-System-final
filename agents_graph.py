@@ -144,8 +144,8 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             '  "search_queries": ["query 1", "query 2"] (if document_search, provide semantic variations)\n'
             "}\n\n"
             "Rules:\n"
-            "- Choose 'data_analysis' if the query asks to calculate, filter, count, or list records from the Tabular Data, asks to analyze data, OR if the user says 'yes' to confirm they want to analyze the CSV/Tabular data. This includes slightly paraphrased column names (e.g. 'sales checklist' for 'check_list_for_sales').\n"
-            "- Choose 'document_search' if the query explicitly asks for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs).\n"
+            "- Choose 'data_analysis' if the query asks to calculate, filter, count, or list records from the Tabular Data, asks to analyze data, OR if the user asks a HYBRID question that requires BOTH reading policy documents and doing math on data. (The data analysis agent has a built-in search_documents tool it can use for hybrid queries).\n"
+            "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word).\n"
             "- Choose 'general' if the query asks for a file type (like PDFs) that is MISSING from the uploaded files, OR if it is a casual greeting completely unrelated to any uploaded files.\n"
         )),
         HumanMessage(content=(
@@ -498,6 +498,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     CRITICAL RULE 2: If searching for specific names, IDs, or string values, use safe pandas filtering (e.g. `.str.contains(..., na=False)`) instead of strict exact matches, and handle empty results gracefully by assigning "No matching records found" to `final_answer` instead of throwing an error.
     CRITICAL RULE 3: By default, you MUST analyze and cross-reference data across ALL provided DataFrames. If there are MULTIPLE DataFrames, explicitly mention their names in your `final_answer`. If there is only ONE DataFrame provided, do NOT mention its name. ONLY restrict your analysis to a single file if the user explicitly asks about that specific file.
     CRITICAL RULE 4: ABSOLUTELY DO NOT use the backtick character (`) ANYWHERE in your Python code. Not in strings, not in comments, not in replace() functions. The presence of any backtick inside your code will break the code parser and cause a fatal SyntaxError. Use standard quotes instead.
+    HYBRID RAG SEARCH: You have access to a function `search_documents(query: str) -> str`. You can call this inside your python code to search the uploaded PDFs/Word/Text documents for policies or rules, and then use those rules to filter your DataFrames!
     Respond ONLY with the Python code in a ```python ... ``` block.
     """
     try:
@@ -525,10 +526,17 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
                 raise ImportError(f"Importing '{name}' is strictly forbidden by the security sandbox.")
             return __import__(name, globals, locals, fromlist, level)
             
+        def safe_search(q: str):
+            from vector_store import search_documents
+            if vector_store:
+                results = search_documents(vector_store, q, top_k=5)
+                return "\n".join([r['text'] for r in results])
+            return "No text documents available."
+            
         import builtins
         safe_builtins = dict(builtins.__dict__)
         safe_builtins['__import__'] = safe_import
-        exec_globals = {'pd': pd, 'np': np, '__builtins__': safe_builtins}
+        exec_globals = {'pd': pd, 'np': np, '__builtins__': safe_builtins, 'search_documents': safe_search}
         import re
         exec_globals.update({re.sub(r'\W+', '_', name.replace('.csv','').replace('.xlsx','')): df for name, df in zip(df_names, dfs)})
         exec_locals = {}
