@@ -167,22 +167,27 @@ hr { border-color: #2a2a2a !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Directories ───────────────────────────────────────────────────────────────
-SESSIONS_DIR = Path("./sessions")
-SESSIONS_DIR.mkdir(exist_ok=True)
-SESSION_DOCS_DIR = Path("./session_docs")
-SESSION_DOCS_DIR.mkdir(exist_ok=True)
-SESSION_FAISS_DIR = Path("./session_faiss")
-SESSION_FAISS_DIR.mkdir(exist_ok=True)
+# ── Session Management (Disk) ─────────────────────────────────────────────────
+SESSIONS_DIR = Path("sessions")
+SESSION_DOCS_DIR = Path("session_docs")
+SESSION_FAISS_DIR = Path("session_faiss")
+
+for d in [SESSIONS_DIR, SESSION_DOCS_DIR, SESSION_FAISS_DIR]:
+    d.mkdir(exist_ok=True)
+
+if "active_session_id" not in st.session_state:
+    st.session_state.active_session_id = None
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "system_ready" not in st.session_state:
+    st.session_state.system_ready = False
+if "loaded_pdfs" not in st.session_state:
+    st.session_state.loaded_pdfs = []
 
 # ── Session state ─────────────────────────────────────────────────────────────
 for k, v in {
     "vector_store": None,
     "langgraph_app": None,
-    "chat_history": [],
-    "loaded_pdfs": [],
-    "system_ready": False,
-    "active_session_id": None,
     "uploader_key": 0
 }.items():
     if k not in st.session_state:
