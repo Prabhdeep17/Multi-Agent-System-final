@@ -530,6 +530,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
             'min': min, 'print': print, 'range': range, 'set': set, 'str': str, 'sum': sum,
             'vars': vars, 'globals': globals, 'locals': locals, 'enumerate': enumerate, 
             'zip': zip, 'type': type, 'isinstance': isinstance, 'round': round,
+            'sorted': sorted, 'filter': filter, 'map': map, 'tuple': tuple, 'reversed': reversed,
             '__import__': safe_import, 'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError, 'KeyError': KeyError
         }
         exec_globals = {'pd': pd, 'np': np, '__builtins__': safe_builtins}
