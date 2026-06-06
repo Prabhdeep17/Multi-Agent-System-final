@@ -499,13 +499,14 @@ with st.sidebar:
 if not st.session_state.system_ready:
     if st.session_state.get("chat_history"):
         render_history()
-    st.markdown("""
-    <div class="gemini-greeting" style="text-align: center; margin-top: 10vh;">
-        <div style="font-size: 38px; font-weight: 500; background: -webkit-linear-gradient(45deg, #7cacf8, #e0949d, #b993ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1.3;">
-            Ask questions about your uploaded documents
+    else:
+        st.markdown("""
+        <div class="gemini-greeting" style="text-align: center; margin-top: 10vh;">
+            <div style="font-size: 38px; font-weight: 500; background: -webkit-linear-gradient(45deg, #7cacf8, #e0949d, #b993ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1.3;">
+                Ask questions about your uploaded documents
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     st.stop()
 
 if st.session_state.loaded_pdfs:
