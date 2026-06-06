@@ -419,9 +419,20 @@ with st.sidebar:
     st.divider()
     
     st.markdown("**Upload Documents**")
-    uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}")
-    if uploaded and st.button("Upload & Chat", key="btn_upload_chat"):
-        add_new_docs(uploaded)
+    
+    if "last_processed_files" not in st.session_state:
+        st.session_state.last_processed_files = []
+        
+    uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.get('uploader_key', 1)}")
+    
+    if uploaded:
+        current_file_names = sorted([f.name for f in uploaded])
+        if current_file_names == st.session_state.last_processed_files:
+            st.markdown("<div style='color: #10b981; font-weight: 500; font-size: 14px; margin-bottom: 10px;'>✅ Uploaded successfully</div>", unsafe_allow_html=True)
+        else:
+            if st.button("Upload & Chat", key="btn_upload_chat"):
+                st.session_state.last_processed_files = current_file_names
+                add_new_docs(uploaded)
         
     st.caption("(Maintaining last 5 sessions on each uploaded set of files)")
 
