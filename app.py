@@ -441,10 +441,7 @@ with st.sidebar:
     st.markdown("### 🤖 Multi Agent System")
     
     st.markdown("**Settings**")
-    api_key = st.text_input("Gemini API Key", type="password", help="Enter your Gemini API Key to use the application.", placeholder="AIzaSy...")
-    if api_key:
-        st.session_state.api_key = api_key
-        
+    st.text_input("Gemini API Key", type="password", key="api_key", help="Enter your Gemini API Key to use the application.", placeholder="AIzaSy...")
     st.divider()
     
     st.markdown("**Upload Documents**")
