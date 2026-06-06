@@ -353,7 +353,8 @@ def handle_query(query: str):
     with st.chat_message("user"):
         st.markdown(query)
 
-    if not os.environ.get("GOOGLE_API_KEY"):
+    active_key = st.session_state.get("api_key") or os.environ.get("GOOGLE_API_KEY")
+    if not active_key:
         msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar to continue.**"
         with st.chat_message("assistant"):
             st.markdown(msg)
@@ -369,6 +370,7 @@ def handle_query(query: str):
                 for event in run_query(
                     st.session_state.langgraph_app,
                     query,
+                    api_key=active_key,
                     chat_history=st.session_state.chat_history,
                 ):
                     if "status" in event:
@@ -412,7 +414,7 @@ with st.sidebar:
     st.markdown("**Settings**")
     api_key = st.text_input("Gemini API Key", type="password", help="Enter your Gemini API Key to use the application.", placeholder="AIzaSy...")
     if api_key:
-        os.environ["GOOGLE_API_KEY"] = api_key
+        st.session_state.api_key = api_key
         
     st.divider()
     

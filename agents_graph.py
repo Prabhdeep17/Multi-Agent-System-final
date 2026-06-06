@@ -30,10 +30,10 @@ load_dotenv(override=True)
 
 # ── LLM Setup ─────────────────────────────────────────────────────────────────
 
-def get_gemini(temperature: float = 0.3):
+def get_gemini(api_key: str = None, temperature: float = 0.3):
     return ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        google_api_key=api_key or os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
         max_retries=1
     )
@@ -53,6 +53,7 @@ def parse_gemini_content(content) -> str:
 
 class PolicyState(TypedDict):
     """Shared state dictionary passed between all agents in the graph."""
+    api_key: str
     # Input
     query: str
     chat_history: List[Dict[str, str]]
@@ -119,7 +120,7 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
 
     file_list_str = "\n".join(file_context_blocks) if file_context_blocks else "No files uploaded."
 
-    llm = get_gemini(temperature=0.0)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.0)
 
     history_str = ""
     if state.get("chat_history"):
@@ -219,7 +220,7 @@ def analysis_agent(state: PolicyState) -> PolicyState:
     numbers, conditions and structures them for the Writer Agent.
     """
     print("--> [Analysis Agent] Analyzing chunks...")
-    llm = get_gemini(temperature=0.2)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.2)
 
     if not state.get("retrieved_chunks"):
         return {**state, "key_facts": "No relevant policy content found.", "source_citations": ""}
@@ -272,7 +273,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
     the Analysis Agent's key facts. Adapts tone to urgency.
     """
     print("--> [Writer Agent] Drafting answer...")
-    llm = get_gemini(temperature=0.4)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.4)
 
     # Inject conversation history for contextual answers
     history_messages = []
@@ -338,7 +339,7 @@ def reviewer_agent(state: PolicyState) -> PolicyState:
     This gives genuine multi-agent verification without the False Negative risk.
     """
     print("--> [Reviewer Agent] Verifying draft (balanced mode)...")
-    llm = get_gemini(temperature=0.1)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.1)
 
     evidence_chunks = state.get("retrieved_chunks", [])
     evidence = ""
@@ -448,7 +449,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     import pandas as pd
     from pathlib import Path
     
-    llm = get_gemini(temperature=0.0)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.0)
     
     session_docs_dir = Path("./session_docs") / str(session_id)
     files = list(session_docs_dir.glob("*.csv")) + list(session_docs_dir.glob("*.xlsx")) + list(session_docs_dir.glob("*.xls"))
@@ -500,7 +501,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     Respond ONLY with the Python code in a ```python ... ``` block.
     """
     try:
-        agent_llm = get_gemini(temperature=0.1)
+        agent_llm = get_gemini(api_key=state.get('api_key'), temperature=0.1)
         response = agent_llm.invoke([HumanMessage(content=prompt)])
         content = parse_gemini_content(response.content)
         
@@ -556,7 +557,7 @@ def math_critic_agent(state: PolicyState) -> PolicyState:
     by the Data Analysis agent to ensure logical and mathematical correctness.
     """
     print("--> [Math Critic Agent] Reviewing generated Pandas code...")
-    llm = get_gemini(temperature=0.1)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.1)
 
     code = state.get('generated_code', '')
     query = state['query']
@@ -610,7 +611,7 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
        raw_result.startswith("Failed to load"):
         return {**state, "final_answer": raw_result}
 
-    llm = get_gemini(temperature=0.3)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.3)
     
     # Inject conversation history for contextual answers
     history_messages = []
@@ -668,7 +669,7 @@ def data_critic_agent(state: PolicyState) -> PolicyState:
     the raw python output to prevent hallucinations.
     """
     print("--> [Data Critic Agent] Verifying draft for hallucinations...")
-    llm = get_gemini(temperature=0.0)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.0)
     
     loop_count = state.get("data_critic_loop_count", 0)
     if loop_count >= 2:
@@ -742,7 +743,7 @@ def conversational_agent(state: PolicyState, session_id: str = None) -> PolicySt
                     
     file_list_str = ", ".join(file_context_blocks) if file_context_blocks else "No files uploaded"
     
-    llm = get_gemini(temperature=0.4)
+    llm = get_gemini(api_key=state.get('api_key'), temperature=0.4)
     
     history_messages = []
     for turn in (state.get("chat_history") or [])[-6:]:
@@ -890,6 +891,7 @@ def run_query(
     """
     initial_state: PolicyState = {
         "query": query,
+        "api_key": api_key,
         "chat_history": chat_history or [],
         "intent": "",
         "urgency": "",
