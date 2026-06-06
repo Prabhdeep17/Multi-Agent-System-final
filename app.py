@@ -304,7 +304,10 @@ def add_new_docs(uploaded_files):
         "title": chat_name,
         "files": file_names,
         "created_at": datetime.now().isoformat(),
-        "history": []
+        "history": [{
+            "role": "assistant",
+            "content": "Welcome the file is uploaded sucessfuly, lets go"
+        }]
     }
     save_session_meta(session_id, meta)
     
@@ -313,7 +316,10 @@ def add_new_docs(uploaded_files):
     
     # Switch to the brand new session instantly
     st.session_state.active_session_id = session_id
-    st.session_state.chat_history = []
+    st.session_state.chat_history = [{
+        "role": "assistant",
+        "content": "Welcome the file is uploaded sucessfuly, lets go"
+    }]
     st.session_state.loaded_pdfs = file_names
     st.session_state.vector_store = vs
     st.session_state.langgraph_app = app
@@ -428,7 +434,7 @@ with st.sidebar:
     if uploaded:
         current_file_names = sorted([f.name for f in uploaded])
         if current_file_names == st.session_state.last_processed_files:
-            st.markdown("<div style='color: #10b981; font-weight: 500; font-size: 14px; margin-bottom: 10px;'>Uploaded successfully !</div>", unsafe_allow_html=True)
+            pass  # Hide button, message is in the chat window
         else:
             if st.button("Upload & Chat", key="btn_upload_chat"):
                 st.session_state.last_processed_files = current_file_names
