@@ -428,7 +428,7 @@ with st.sidebar:
     if uploaded:
         current_file_names = sorted([f.name for f in uploaded])
         if current_file_names == st.session_state.last_processed_files:
-            st.markdown("<div style='color: #10b981; font-weight: 500; font-size: 14px; margin-bottom: 10px;'>✅ Uploaded successfully</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color: #10b981; font-weight: 500; font-size: 14px; margin-bottom: 10px;'>Uploaded successfully !</div>", unsafe_allow_html=True)
         else:
             if st.button("Upload & Chat", key="btn_upload_chat"):
                 st.session_state.last_processed_files = current_file_names
