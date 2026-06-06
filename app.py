@@ -3,14 +3,11 @@ MultiAgent System (Dark Theme) - Session Manager
 """
 import streamlit as st
 from pathlib import Path
-from dotenv import load_dotenv
 import json
 import uuid
 import shutil
 import os
 from datetime import datetime
-
-load_dotenv(override=True)
 
 st.set_page_config(
     page_title="MultiAgent System",
@@ -355,13 +352,11 @@ def render_history():
 
 
 def handle_query(query: str):
-    import os
-    
     st.session_state.chat_history.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.markdown(query)
 
-    active_key = st.session_state.get("api_key") or os.environ.get("GOOGLE_API_KEY")
+    active_key = st.session_state.get("api_key")
     if not active_key:
         msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar to continue.**"
         with st.chat_message("assistant"):
@@ -460,8 +455,13 @@ with st.sidebar:
             pass  # Hide button, message is in the chat window
         else:
             if st.button("Upload & Chat", key="btn_upload_chat"):
-                st.session_state.last_processed_files = current_file_names
-                add_new_docs(uploaded)
+                if not st.session_state.get("api_key"):
+                    msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**"
+                    st.session_state.chat_history.append({"role": "assistant", "content": msg, "meta": {"intent": "system"}})
+                    st.rerun()
+                else:
+                    st.session_state.last_processed_files = current_file_names
+                    add_new_docs(uploaded)
         
     st.caption("(Maintaining last 5 sessions on each uploaded set of files)")
 

@@ -33,7 +33,7 @@ load_dotenv(override=True)
 def get_gemini(api_key: str = None, temperature: float = 0.3):
     return ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview",
-        google_api_key=api_key or os.getenv("GOOGLE_API_KEY"),
+        google_api_key=api_key or "",
         temperature=temperature,
         max_retries=1
     )
@@ -290,7 +290,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
     tone = "clear and urgent" if state.get("urgency") == "high" else "professional and helpful"
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"- There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly state the exact names of the source files you used at the beginning of your answer.\n"
+        file_rule = f"- There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly attribute which information comes from which specific file in your sentences (e.g., 'According to policy.pdf...'). Make it obvious which file provided which fact.\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "- There is only one file uploaded. Do NOT mention its name.\n"
     else:
@@ -656,7 +656,7 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
         feedback_str = f"CRITIC REJECTION - YOU HALLUCINATED: {state['data_critic_feedback']}\nYou MUST rewrite your answer without inventing facts. If you don't have the data, state that you don't have it.\n\n"
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"4. EXPLICIT FILE NAMES: There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly state their exact names at the beginning of your answer.\n"
+        file_rule = f"4. EXPLICIT FILE NAMES: There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly mention which specific file provided the data you are analyzing (e.g., 'Based on sales.csv...'). Make it obvious which file provided which numbers.\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "4. EXPLICIT FILE NAMES: There is only one file uploaded. Do NOT mention its name in your answer.\n"
     else:
@@ -780,7 +780,7 @@ def conversational_agent(state: PolicyState, session_id: str = None) -> PolicySt
             history_messages.append(AIMessage(content=content))
 
     if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"If the user's question relates to the uploaded files, you MUST explicitly state their exact names ({', '.join(state['uploaded_files'])}).\n"
+        file_rule = f"If the user's question relates to the uploaded files, you MUST explicitly state the specific file name when giving an answer (e.g., 'Based on policy.docx, you can...'). Make it obvious which file provided the information.\n"
     elif len(state.get("uploaded_files", [])) == 1:
         file_rule = "If the user's question relates to the uploaded files, do NOT mention the file name.\n"
     else:
@@ -917,7 +917,7 @@ def run_query(
     Run a query through the full pipeline.
     """
     initial_state: PolicyState = {
-        "api_key": api_key or os.getenv("GOOGLE_API_KEY"),
+        "api_key": api_key or "",
         "session_id": session_id,
         "uploaded_files": uploaded_files or [],
         "chat_history": chat_history or [],
