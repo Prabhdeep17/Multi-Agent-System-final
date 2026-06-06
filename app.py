@@ -309,7 +309,7 @@ def add_new_docs(uploaded_files):
         "created_at": datetime.now().isoformat(),
         "history": [{
             "role": "assistant",
-            "content": "Hey! The new session is created and the file is uploaded. How may I help you?"
+            "content": "Documents successfully uploaded and indexed. How can I assist you with this data?"
         }]
     }
     save_session_meta(session_id, meta)
@@ -321,7 +321,7 @@ def add_new_docs(uploaded_files):
     st.session_state.active_session_id = session_id
     st.session_state.chat_history = [{
         "role": "assistant",
-        "content": "Welcome the file is uploaded sucessfuly, lets go"
+        "content": "Documents successfully uploaded and indexed. How can I assist you with this data?"
     }]
     st.session_state.loaded_pdfs = file_names
     st.session_state.vector_store = vs
