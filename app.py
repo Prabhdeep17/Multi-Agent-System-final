@@ -455,9 +455,7 @@ with st.sidebar:
         current_file_names = sorted([f.name for f in uploaded])
         if st.button("Upload & Chat", key="btn_upload_chat"):
             if not st.session_state.get("api_key"):
-                msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**"
-                st.session_state.chat_history.append({"role": "assistant", "content": msg, "meta": {"intent": "system"}})
-                st.rerun()
+                st.error("⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**")
             else:
                 st.session_state.last_processed_files = current_file_names
                 add_new_docs(uploaded)
