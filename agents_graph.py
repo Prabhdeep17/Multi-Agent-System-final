@@ -519,20 +519,14 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
         
         # Security Sandbox: Restrict execution environment to prevent 'import os' attacks
         def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
-            allowed = ['pandas', 'numpy', 'datetime', 're', 'math', 'collections', 'json']
-            if name in allowed or name.split('.')[0] in allowed:
-                return __import__(name, globals, locals, fromlist, level)
-            raise ImportError(f"Importing '{name}' is strictly forbidden by the security sandbox.")
-
-        safe_builtins = {
-            'abs': abs, 'all': all, 'any': any, 'bool': bool, 'dict': dict, 
-            'float': float, 'int': int, 'len': len, 'list': list, 'max': max, 
-            'min': min, 'print': print, 'range': range, 'set': set, 'str': str, 'sum': sum,
-            'vars': vars, 'globals': globals, 'locals': locals, 'enumerate': enumerate, 
-            'zip': zip, 'type': type, 'isinstance': isinstance, 'round': round,
-            'sorted': sorted, 'filter': filter, 'map': map, 'tuple': tuple, 'reversed': reversed,
-            '__import__': safe_import, 'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError, 'KeyError': KeyError
-        }
+            dangerous = ['os', 'sys', 'subprocess', 'shutil', 'socket', 'urllib', 'requests']
+            if name.split('.')[0] in dangerous:
+                raise ImportError(f"Importing '{name}' is strictly forbidden by the security sandbox.")
+            return __import__(name, globals, locals, fromlist, level)
+            
+        import builtins
+        safe_builtins = dict(builtins.__dict__)
+        safe_builtins['__import__'] = safe_import
         exec_globals = {'pd': pd, 'np': np, '__builtins__': safe_builtins}
         import re
         exec_globals.update({re.sub(r'\W+', '_', name.replace('.csv','').replace('.xlsx','')): df for name, df in zip(df_names, dfs)})
