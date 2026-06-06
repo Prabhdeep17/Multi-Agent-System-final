@@ -261,7 +261,7 @@ def switch_to_session(session_id):
     st.session_state.system_ready = True
 
 
-def add_new_docs(uploaded_files):
+def add_new_docs(uploaded_files, missing_api_key=False):
     from vector_store import build_faiss_index, load_and_chunk_docs
     from agents_graph import build_graph
     
@@ -301,6 +301,8 @@ def add_new_docs(uploaded_files):
     
     app = build_graph(vs, session_id)
     
+    welcome_msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar to continue.**" if missing_api_key else "Documents successfully uploaded and indexed. How can I assist you with this data?"
+    
     # Save the new session
     meta = {
         "id": session_id,
@@ -309,7 +311,7 @@ def add_new_docs(uploaded_files):
         "created_at": datetime.now().isoformat(),
         "history": [{
             "role": "assistant",
-            "content": "Documents successfully uploaded and indexed. How can I assist you with this data?"
+            "content": welcome_msg
         }]
     }
     save_session_meta(session_id, meta)
@@ -321,7 +323,7 @@ def add_new_docs(uploaded_files):
     st.session_state.active_session_id = session_id
     st.session_state.chat_history = [{
         "role": "assistant",
-        "content": "Documents successfully uploaded and indexed. How can I assist you with this data?"
+        "content": welcome_msg
     }]
     st.session_state.loaded_pdfs = file_names
     st.session_state.vector_store = vs
@@ -454,10 +456,10 @@ with st.sidebar:
     if uploaded:
         current_file_names = sorted([f.name for f in uploaded])
         if st.button("Upload & Chat", key="btn_upload_chat"):
+            st.session_state.last_processed_files = current_file_names
             if not st.session_state.get("api_key"):
-                st.error("⚠️ **Please enter your Gemini API Key in the Settings sidebar before uploading documents.**")
+                add_new_docs(uploaded, missing_api_key=True)
             else:
-                st.session_state.last_processed_files = current_file_names
                 add_new_docs(uploaded)
         
     st.caption("(Maintaining last 5 sessions on each uploaded set of files)")
