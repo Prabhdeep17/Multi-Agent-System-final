@@ -328,15 +328,6 @@ def render_meta(result: dict):
     intent = result.get("intent", "").replace("_", " ").title()
     chunks = result.get("retrieved_count", 0)
 
-    st.markdown(f"""
-    <div class="meta-row">
-        <span class="tag tag-blue">🎯 {intent}</span>
-        <span class="tag {urgency_cls}">⚡ {urgency.title()}</span>
-        <span class="tag tag-green">{verified}</span>
-        <span class="tag tag-gray">{chunks} chunks</span>
-    </div>
-    """, unsafe_allow_html=True)
-
     if result.get("reviewer_notes") and result["reviewer_notes"] != "Accurate":
         with st.expander("🔍 Reviewer Notes"):
             st.markdown(result["reviewer_notes"])
