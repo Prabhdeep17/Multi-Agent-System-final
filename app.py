@@ -324,6 +324,7 @@ def add_new_docs(uploaded_files):
     st.session_state.vector_store = vs
     st.session_state.langgraph_app = app
     st.session_state.system_ready = True
+    st.session_state.uploader_key = st.session_state.get('uploader_key', 1) + 1
     st.rerun()
 
 
