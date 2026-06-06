@@ -54,6 +54,8 @@ def parse_gemini_content(content) -> str:
 class PolicyState(TypedDict):
     """Shared state dictionary passed between all agents in the graph."""
     api_key: str
+    session_id: str
+    uploaded_files: List[str]
     # Input
     query: str
     chat_history: List[Dict[str, str]]
@@ -287,6 +289,13 @@ def writer_agent(state: PolicyState) -> PolicyState:
 
     tone = "clear and urgent" if state.get("urgency") == "high" else "professional and helpful"
 
+    if len(state.get("uploaded_files", [])) > 1:
+        file_rule = f"- There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly state the exact names of the source files you used at the beginning of your answer.\n"
+    elif len(state.get("uploaded_files", [])) == 1:
+        file_rule = "- There is only one file uploaded. Do NOT mention its name.\n"
+    else:
+        file_rule = ""
+
     messages = [
         SystemMessage(content=(
             f"You are an expert HR policy communication specialist. Write in a {tone} tone.\n\n"
@@ -299,6 +308,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
             "- If a fact is not in the key facts → it does not exist for this answer.\n\n"
             "## FORMAT RULES:\n"
             "- Start with a direct answer to the question\n"
+            f"{file_rule}"
             "- Use bullet points or numbered lists for multiple items\n"
             "- Bold important numbers/limits using **bold**\n"
             "- Reference sources inline: [1], [2]\n"
@@ -645,6 +655,13 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
     if state.get("data_critic_feedback") and state["data_critic_feedback"] not in ["PASS", "PASS_LIMIT_REACHED"]:
         feedback_str = f"CRITIC REJECTION - YOU HALLUCINATED: {state['data_critic_feedback']}\nYou MUST rewrite your answer without inventing facts. If you don't have the data, state that you don't have it.\n\n"
 
+    if len(state.get("uploaded_files", [])) > 1:
+        file_rule = f"4. EXPLICIT FILE NAMES: There are multiple files uploaded ({', '.join(state['uploaded_files'])}). You MUST explicitly state their exact names at the beginning of your answer.\n"
+    elif len(state.get("uploaded_files", [])) == 1:
+        file_rule = "4. EXPLICIT FILE NAMES: There is only one file uploaded. Do NOT mention its name in your answer.\n"
+    else:
+        file_rule = ""
+
     messages = [
         SystemMessage(content=(
             "You are a brilliant, highly intelligent Senior Data Scientist. When presented with raw mathematical results or data extracts, DO NOT just regurgitate the numbers like a mindless robot.\n\n"
@@ -652,7 +669,7 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
             "1. ADAPT TO THE QUERY: Do not use the exact same template for every answer. If the user asks a simple question (e.g., 'How many leads?'), provide a short, natural 1-2 sentence answer. If the question is complex (e.g., 'Analyze the funnel'), provide a deeper, structured breakdown.\n"
             "2. ORGANIC INSIGHTS: Provide business context and interpretation naturally woven into your response. Do not force a hardcoded 'Analyst Insight:' header at the bottom of every message.\n"
             "3. STRICT RELEVANCE: Answer ONLY what the user explicitly asked. Do NOT add unsolicited explanations, tutorials (like 'Why this works'), or business strategy unless specifically requested. If the user asks for code and output, give ONLY code and output.\n"
-            "4. EXPLICIT FILE NAMES: If there are MULTIPLE datasets uploaded in the Context, you MUST explicitly state the exact names of the datasets/files that were analyzed. If only ONE file is uploaded, do NOT mention its name.\n"
+            f"{file_rule}"
             "5. NO BOILERPLATE: Never output 'Status: Active', file paths, column lists, or 'System Notes'.\n"
             "6. ZERO HALLUCINATION CONTRACT: You must NEVER invent, assume, or hallucinate numbers to fulfill a user's hypothetical scenario. If a result is 0 (e.g., 0 conversions, 0 sales), report exactly 0. If data is missing to answer a strategy question, state that the data is missing. Never fabricate statistics."
         )),
@@ -762,13 +779,20 @@ def conversational_agent(state: PolicyState, session_id: str = None) -> PolicySt
         elif role == "assistant":
             history_messages.append(AIMessage(content=content))
 
+    if len(state.get("uploaded_files", [])) > 1:
+        file_rule = f"If the user's question relates to the uploaded files, you MUST explicitly state their exact names ({', '.join(state['uploaded_files'])}).\n"
+    elif len(state.get("uploaded_files", [])) == 1:
+        file_rule = "If the user's question relates to the uploaded files, do NOT mention the file name.\n"
+    else:
+        file_rule = ""
+
     messages = [
         SystemMessage(content=(
             "You are a helpful conversational AI assistant.\n"
             f"The user has currently uploaded the following files: {file_list_str}\n\n"
+            f"{file_rule}"
             "If the user asks about a document type (like a PDF or Policy document) that they did NOT upload, "
-            "but they DID upload other files (like CSVs), politely point this out. "
-            "For example: 'It looks like you didn't upload any PDFs, but you did upload a CSV. Did you mean to ask about the CSV data?'\n"
+            "but they DID upload other files (like CSVs), politely point this out.\n"
             "If the user's question is completely unrelated to the system, just respond conversationally and helpfully.\n"
             "Keep your responses concise and natural."
         )),
@@ -884,23 +908,20 @@ def build_graph(vector_store, session_id: str = None):
 def run_query(
     app,
     query: str,
-    chat_history: List[Dict[str, str]] = None
+    api_key: str = None,
+    session_id: str = "default_session",
+    chat_history: List[Dict[str, str]] = None,
+    uploaded_files: List[str] = None
 ) -> Dict[str, Any]:
     """
-    Run a query through the full 5-agent pipeline.
-
-    Args:
-        app: Compiled LangGraph application
-        query: User query string
-        chat_history: Previous conversation turns
-
-    Returns:
-        Generator yielding status updates, then finally the Dict with final_answer, etc.
+    Run a query through the full pipeline.
     """
     initial_state: PolicyState = {
-        "query": query,
-        "api_key": api_key,
+        "api_key": api_key or os.getenv("GOOGLE_API_KEY"),
+        "session_id": session_id,
+        "uploaded_files": uploaded_files or [],
         "chat_history": chat_history or [],
+        "query": query,
         "intent": "",
         "urgency": "",
         "search_queries": [query],

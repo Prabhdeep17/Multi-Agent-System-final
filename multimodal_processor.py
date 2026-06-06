@@ -59,7 +59,12 @@ def _describe_image_with_gemini(pil_img, api_key: str) -> str:
         )
         
         response = llm.invoke([msg])
-        return response.content
+        content = response.content
+        if isinstance(content, list):
+            # Extract text blocks if it's a list
+            text_blocks = [item['text'] for item in content if item.get('type') == 'text']
+            return "\n".join(text_blocks)
+        return str(content)
     except Exception as e:
         print(f"Error analyzing image with Gemini: {e}")
         return f"[Image analysis failed: {str(e)}]"
@@ -177,7 +182,17 @@ def process_document(file_path_str: str, session_id: str, api_key: str) -> str:
     
     ext = file_path.suffix.lower()
     
-    if ext == ".pdf":
+    if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+        if Image:
+            try:
+                pil_img = Image.open(file_path).convert("RGB")
+                desc = _describe_image_with_gemini(pil_img, api_key)
+                return f"[Image File Description: {desc}]\n"
+            except Exception as e:
+                print(f"Error processing image file: {e}")
+                return ""
+        return ""
+    elif ext == ".pdf":
         return _process_pdf(file_path, session_dir, api_key)
     elif ext in [".docx", ".doc"]:
         return _process_docx(file_path, session_dir, api_key)

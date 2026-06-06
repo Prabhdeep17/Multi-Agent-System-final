@@ -10,6 +10,7 @@ __pycache__/
 sessions/
 session_docs/
 session_faiss/
+faiss_index/
 chroma_db_multi_agent/
 
 # Test Data
