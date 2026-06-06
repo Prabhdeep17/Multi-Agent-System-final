@@ -356,11 +356,20 @@ def render_history():
 
 
 def handle_query(query: str):
-    from agents_graph import run_query
-
+    import os
+    
     st.session_state.chat_history.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.markdown(query)
+
+    if not os.environ.get("GOOGLE_API_KEY"):
+        msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar to continue.**"
+        with st.chat_message("assistant"):
+            st.markdown(msg)
+        st.session_state.chat_history.append({"role": "assistant", "content": msg, "meta": {"intent": "system", "urgency": "high"}})
+        return
+
+    from agents_graph import run_query
 
     with st.chat_message("assistant"):
         with st.status("Running pipeline…", expanded=True) as status:
