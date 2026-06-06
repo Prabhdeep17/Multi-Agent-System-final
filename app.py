@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import json
 import uuid
 import shutil
+import os
 from datetime import datetime
 
 load_dotenv(override=True)
@@ -407,6 +408,13 @@ if "initialized" not in st.session_state:
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🤖 Multi Agent System")
+    
+    st.markdown("**Settings**")
+    api_key = st.text_input("Gemini API Key", type="password", help="Enter your Gemini API Key to use the application.", placeholder="AIzaSy...")
+    if api_key:
+        os.environ["GOOGLE_API_KEY"] = api_key
+        
+    st.divider()
     
     st.markdown("**Upload Documents**")
     uploaded = st.file_uploader("Upload Documents", type=["pdf", "csv", "xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}")
