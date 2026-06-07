@@ -49,6 +49,40 @@ def parse_gemini_content(content) -> str:
     return str(content)
 
 
+ANSWER_ON_POINT_RULES = """
+## ANSWER ON POINT (MANDATORY — EVERY QUESTION, EVERY PIPELINE):
+1. Restate internally what the user is ACTUALLY asking — not just keywords that overlap with uploaded files.
+2. The opening of your response must DIRECTLY address that question before any supporting detail.
+3. Use uploaded documents or computed data ONLY when the question requires evidence from those sources.
+4. Never substitute a document summary, data dump, or tangentially related facts for a direct answer.
+5. For reasoning, preference, hypothetical, or "what would you" questions: answer with logic and trade-offs first; cite files only if the user explicitly asked about them.
+6. For factual questions about uploads: answer the specific fact requested — do not recite unrelated metrics from the same file.
+7. Match depth to the question: one sentence for simple asks, structured analysis for complex ones. No boilerplate headers unless useful.
+"""
+
+INLINE_CITATION_RULES = """
+## INLINE SOURCE CITATIONS (MANDATORY when using uploaded files or computed data):
+Every line or bullet that states a fact from uploads MUST end with an inline citation on that same line.
+
+Format:
+- (Source: Filename.ext)
+- (Source: Filename.pdf, p. 12)  — include page when known
+
+Examples:
+- Q4 revenue was $450M (Source: VantaGroup_Q4_2025_Report.docx)
+- EBITDA margin reached 28.4% in FY2025 (Source: VantaGroup_Q4_2025_Report.docx)
+- Total widget sales: 1,240 units (Source: sales_data.csv)
+
+Rules:
+1. Attach the source to EACH factual line — never group all sources at the bottom or in a separate section.
+2. Do NOT use bare numbered refs like [1] without the filename on the same line.
+3. Clean internal artifact names: Report_p2_table1 or Report_table2 → Report.pdf (or Report.docx).
+4. Lines of pure reasoning with no document/data fact do NOT need a citation.
+5. If a line combines reasoning + fact, only the fact portion needs the citation at line end.
+6. For computed metrics, cite the original uploaded file name, not internal table CSV names.
+"""
+
+
 # ── Shared State ──────────────────────────────────────────────────────────────
 
 class PolicyState(TypedDict):
@@ -61,6 +95,9 @@ class PolicyState(TypedDict):
     chat_history: List[Dict[str, str]]
     intent: str
     urgency: str
+    answer_mode: str
+    core_question: str
+    requires_uploads: bool
     search_queries: List[str]
     retrieved_chunks: List[str]
     data_analysis_result: str
@@ -74,6 +111,10 @@ class PolicyState(TypedDict):
     math_critic_feedback: str
     data_critic_feedback: str
     data_critic_loop_count: int
+
+
+def citations_required(state: PolicyState) -> bool:
+    return bool(state.get("requires_uploads")) and state.get("answer_mode") != "direct"
 
 
 # ── Agent 1: Router ───────────────────────────────────────────────────────────
@@ -142,14 +183,28 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             "JSON format:\n"
             "{\n"
             '  "intent": one of ["data_analysis", "document_search", "general"],\n'
+            '  "answer_mode": one of ["direct", "document_grounded", "data_computation", "hybrid"],\n'
+            '  "core_question": "One clear sentence restating what the user actually wants answered",\n'
+            '  "requires_uploads": true or false,\n'
             '  "urgency": one of ["high", "medium", "low"],\n'
-            '  "search_queries": ["query 1", "query 2"] (if document_search, provide semantic variations)\n'
+            '  "search_queries": ["query 1", "query 2"]\n'
             "}\n\n"
-            "Rules:\n"
-            "- Choose 'data_analysis' if the query involves math, calculations, counting, financial metrics (revenue, EBITDA, margins, profits, growth, loss), analyzing trends, or referencing tables/data. If the query asks for ANY financial numbers from a Q-report or financial statement, you MUST choose data_analysis. Also choose this for HYBRID questions requiring both text policies and math.\n"
-            "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word) AND does NOT require analyzing numerical data or financial metrics.\n"
-            "- Choose 'general' ONLY if the CURRENT USER QUERY is a casual greeting completely unrelated to the files. IGNORE the conversation history when deciding the intent. If the current query asks a question, requests a summary, or mentions any topic that could potentially be in the documents, you MUST choose document_search!\n"
-            "CRITICAL RULE: Never choose 'general' for questions about data, policies, rules, or summaries. 'general' is ONLY for 'hi', 'hello', or asking what you are.\n"
+            "Classification rules:\n"
+            "- answer_mode=direct: reasoning, opinions, preferences, hypotheticals, general knowledge, greetings. "
+            "The question can be answered WITHOUT reading uploaded files. Set requires_uploads=false.\n"
+            "- answer_mode=document_grounded: user wants specific facts, quotes, policies, or summaries FROM uploaded documents. "
+            "Set requires_uploads=true, intent=document_search.\n"
+            "- answer_mode=data_computation: user wants numbers calculated or extracted FROM uploaded tables/spreadsheets. "
+            "Set requires_uploads=true, intent=data_analysis.\n"
+            "- answer_mode=hybrid: user wants both reasoning AND document facts (e.g. 'based on the report, should we invest?'). "
+            "Set requires_uploads=true, intent=document_search.\n\n"
+            "CRITICAL — distinguish question TYPE from topic overlap:\n"
+            "- 'Would you rather invest in 30% revenue growth or 30% EBITDA?' → direct, requires_uploads=false "
+            "(investment reasoning; uploaded files are irrelevant even if they mention revenue/EBITDA).\n"
+            "- 'What was VantaGroup Q4 revenue?' → data_computation or document_grounded, requires_uploads=true.\n"
+            "- 'Summarize the risk section' → document_grounded, requires_uploads=true.\n"
+            "- Keywords matching file content do NOT automatically mean requires_uploads=true. "
+            "Ask: would the answer change if no files were uploaded?\n"
         )),
         HumanMessage(content=(
             f"CONVERSATION HISTORY:\n{history_str}\n\n"
@@ -162,31 +217,42 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
     raw = parse_gemini_content(response.content)
 
     # Robust JSON extraction
-    intent = "document_search"  # Default fallback
+    intent = "document_search"
     urgency = "medium"
+    answer_mode = "document_grounded"
+    core_question = state["query"]
+    requires_uploads = True
     search_queries = [state["query"]]
 
-    match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
     if match:
         try:
             parsed = json.loads(match.group())
-            intent = parsed.get("intent", "document_search")
-            urgency = parsed.get("urgency", "medium")
-            search_queries = parsed.get("search_queries", [state["query"]])
+            intent = parsed.get("intent", intent)
+            urgency = parsed.get("urgency", urgency)
+            answer_mode = parsed.get("answer_mode", answer_mode)
+            core_question = parsed.get("core_question", core_question)
+            requires_uploads = bool(parsed.get("requires_uploads", requires_uploads))
+            search_queries = parsed.get("search_queries", search_queries)
         except json.JSONDecodeError:
             pass
 
-    # PYTHON-LEVEL OVERRIDE: Never allow 'general' if the user is asking a question!
-    # This prevents the LLM from getting confused by chat history and hallucinating.
-    query_lower = state['query'].lower()
-    question_words = ["?", "how", "what", "where", "when", "why", "who", "which", "explain", "summarize", "tell me", "detail", "does", "is", "are", "can", "could", "would", "should"]
-    if intent == "general" and any(w in query_lower for w in question_words):
+    if answer_mode == "direct" or not requires_uploads:
+        intent = "general"
+        answer_mode = "direct"
+        requires_uploads = False
+    elif answer_mode == "data_computation":
+        intent = "data_analysis"
+    elif answer_mode in ("document_grounded", "hybrid"):
         intent = "document_search"
 
     return {
         **state,
         "intent": intent,
         "urgency": urgency,
+        "answer_mode": answer_mode,
+        "core_question": core_question,
+        "requires_uploads": requires_uploads,
         "search_queries": search_queries
     }
 
@@ -244,30 +310,32 @@ def analysis_agent(state: PolicyState) -> PolicyState:
     evidence = ""
     citations = []
     for i, chunk in enumerate(state["retrieved_chunks"], 1):
-        evidence += f"[{i}] Source: {chunk['source']} (Page {chunk['page']})\n{chunk['text']}\n\n"
-        citations.append(f"[{i}] {chunk['source']}, Page {chunk['page']}")
+        src = chunk['source']
+        page = chunk.get('page', '?')
+        evidence += f"[{i}] Source: {src} (Page {page})\n{chunk['text']}\n\n"
+        citations.append(f"[{i}] {src}, Page {page}")
+
+    cite_rules = INLINE_CITATION_RULES if citations_required(state) else ""
 
     messages = [
         SystemMessage(content=(
-            "You are a senior policy analyst. Your job is to extract every relevant fact, "
-            "rule, condition, number, date, and exception from the provided policy evidence.\n\n"
-            "Be exhaustive. Structure your analysis as:\n"
-            "- KEY RULES: The main policy rules that apply\n"
-            "- NUMBERS & LIMITS: Any quantities, days, amounts, percentages\n"
-            "- CONDITIONS & EXCEPTIONS: When rules apply or don't apply\n"
-            "- HIERARCHY & OVERRIDES: Specifically note where a specific exception overrides a general rule. Do not let general rules contradict specific exceptions.\n"
-            "- IMPORTANT NOTES: Any warnings, deadlines, or special cases\n"
-            "- CRITICAL CONTEXT FIREWALL: Treat every uploaded file as an independent context silo. You are strictly forbidden from fabricating, assuming, or weaving narrative connections between separate files unless there is an explicit textual cross-reference connecting them by name or unique ID within the source data.\n"
-            "- TABULAR VS. TEXTUAL ISOLATION RULE: If one file contains numerical data tables and another contains general narratives, keep their operations completely separate. Do NOT infer or state that a person mentioned in a text file was responsible for, processed, calculated, or monitored rows in a data table unless that text file explicitly mentions those exact data parameters or SKU IDs.\n"
-            "- STRICT NO INFERENCE RULE (OVERREACH PREVENTION): You must act as a strict, literal legal clerk. Do NOT draw conclusions, infer intent, read between the lines, or combine separate facts into a new narrative unless the text explicitly does so. If the text says A and B, do not claim A caused B unless explicitly stated. Never overreach beyond the literal evidence.\n\n"
-            "Always reference evidence numbers [1], [2] etc."
+            "You are a senior policy analyst. Extract ONLY facts from the evidence that help answer the user's specific question.\n\n"
+            f"{ANSWER_ON_POINT_RULES}\n"
+            f"{cite_rules}\n"
+            "Extraction rules:\n"
+            "- Format each extracted fact on its own line prefixed with its source:\n"
+            "  [Source: filename.ext, p. N] The fact text here.\n"
+            "- KEY FACTS: Facts directly relevant to the core question\n"
+            "- If evidence does not contain information needed to answer the question, say so explicitly.\n"
+            "- Do NOT extract tangentially related facts just because they share keywords with the question.\n"
+            "- STRICT NO INFERENCE RULE: Do not draw conclusions beyond literal evidence.\n"
         )),
         HumanMessage(content=(
-            f"TABULAR DATA INSIGHTS (Warning - May Contain Hallucinations):\n{state.get('data_analysis_result', 'None')}\n\n"
+            f"CORE QUESTION TO ANSWER: {state.get('core_question', state['query'])}\n\n"
+            f"TABULAR DATA INSIGHTS:\n{state.get('data_analysis_result', 'None')}\n\n"
             f"POLICY EVIDENCE (From Text/PDFs):\n{evidence}\n\n"
-            f"USER QUESTION: {state['query']}\n"
-            f"QUERY INTENT: {state.get('intent', 'general')}\n\n"
-            "Extract all relevant facts from the tabular data and evidence above. If the query asks about both, combine them intelligently."
+            f"ORIGINAL USER QUERY: {state['query']}\n\n"
+            "Extract only facts relevant to the core question."
         ))
     ]
 
@@ -301,76 +369,48 @@ def writer_agent(state: PolicyState) -> PolicyState:
         elif role == "assistant":
             history_messages.append(AIMessage(content=content))
 
-    tone = "clear and urgent" if state.get("urgency") == "high" else "professional and helpful"
-
-    if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"- STRICT RULE FOR MULTIPLE FILES ({', '.join(state['uploaded_files'])}): NEVER group or list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of data you provide (e.g., 'Revenue grew by 10% (Source: data.csv)'). Failure to cite the specific file for each fact is unacceptable.\n"
-    elif len(state.get("uploaded_files", [])) == 1:
-        file_rule = "- There is only one file uploaded. Do NOT mention its name.\n"
-    else:
-        file_rule = ""
+    needs_cites = citations_required(state)
 
     messages = [
         SystemMessage(content=(
             "You are an expert financial and policy analyst. You write clearly, professionally, and logically.\n\n"
-            "## SEPARATION OF THEORY AND EVIDENCE (CRITICAL):\n"
-            "You MUST separate your general reasoning from raw document facts using strict JSON.\n"
-            "Your output MUST be a valid JSON object with EXACTLY two keys:\n"
-            "{\n"
-            "  \"analysis\": \"Your theoretical answer using general knowledge. Write in clear paragraphs.\",\n"
-            "  \"evidence\": \"Raw document facts strictly formatted as independent bullet points starting with '-' or '*'. Do NOT draw new conclusions or weave facts together.\"\n"
-            "}\n\n"
-            "## FACTS-ONLY CONTRACT FOR EVIDENCE SECTION:\n"
-            "- Do NOT infer or extrapolate beyond what is written in the source chunks.\n"
-            "- Do NOT create causal relationships between facts from Document A and Document B.\n"
-            "- If a fact is not in the key facts → it does not exist for this answer.\n\n"
-            "## FORMAT RULES:\n"
-            f"{file_rule}"
-            "- Bold important numbers/limits using **bold**\n"
-            "- Reference sources inline: [1], [2]\n"
-            "- If a specific exception exists in the key facts, explicitly state that it overrides the general rule.\n"
-            "- If the key facts indicate that no relevant information was found, set evidence to: 'The provided documents do not contain the answer to this question.'\n"
-            "- CROSS-DOCUMENT RULE: If the key facts involve both a spreadsheet and a text policy, "
-            "only state connections that are EXPLICITLY written in the key facts. "
-            "Do not create narrative bridges between unrelated documents.\n"
-            "- DOCUMENT NAMES NOT NUMBERS: Never use terms like 'Document 1', 'File A', or 'the first file'. Always refer to the exact source document name (e.g. 'According to policy.pdf...').\n"
-            "- ORIGINAL PDF CITAIONS: If a data source has an internal extracted name like 'Report_p2_table1.csv' or 'Report_table1', you MUST clean it up and cite the original document name instead (e.g. 'Report.pdf'). Do NOT expose internal '_table' or '_p2' artifacts to the user.\n"
+            f"{ANSWER_ON_POINT_RULES}\n"
+            f"{INLINE_CITATION_RULES if needs_cites else ''}\n"
+            "## OUTPUT FORMAT:\n"
+            'Respond with valid JSON: {"answer": "Your full response here"}\n'
+            "- Write the complete answer in the `answer` field as markdown prose and/or bullet lines.\n"
+            "- When citations are required, EVERY factual line from uploads must end with (Source: filename.ext).\n"
+            "- Lead with a direct answer to the core question, then supporting detail.\n"
+            "- Do NOT use separate 'Document Evidence' sections — weave cited facts into the answer.\n"
+            "- Bold important numbers using **bold**.\n"
+            "- Clean internal table names (Report_table1 → Report.pdf).\n"
         )),
         *history_messages,
         HumanMessage(content=(
-            f"USER QUESTION: {state['query']}\n\n"
+            f"CORE QUESTION: {state.get('core_question', state['query'])}\n"
+            f"ANSWER MODE: {state.get('answer_mode', 'document_grounded')}\n"
+            f"CITATIONS REQUIRED ON EACH FACT LINE: {needs_cites}\n\n"
+            f"ORIGINAL USER QUERY: {state['query']}\n\n"
             f"ANALYST KEY FACTS:\n{state.get('key_facts', '')}\n\n"
-            f"SOURCES AVAILABLE: {state.get('source_citations', '')}\n\n"
-            "Write the final answer now as a JSON object."
+            f"SOURCES AVAILABLE:\n{state.get('source_citations', '')}\n\n"
+            'Write the final answer as JSON: {"answer": "..."}'
         ))
     ]
 
     response = llm.invoke(messages)
     raw = parse_gemini_content(response.content)
     
-    # Try to parse the strict JSON output
     match = re.search(r'\{.*\}', raw, re.DOTALL)
     if match:
         try:
             parsed = json.loads(match.group())
-            analysis_text = parsed.get("analysis", "").strip()
-            evidence_text = parsed.get("evidence", "").strip()
-            
-            final_draft = ""
-            if analysis_text:
-                final_draft += f"### Analysis\n{analysis_text}\n\n"
-            if evidence_text:
-                final_draft += f"### Document Evidence\n{evidence_text}"
-                
-            return {**state, "writer_draft": final_draft.strip()}
+            answer_text = parsed.get("answer", parsed.get("analysis", "")).strip()
+            if answer_text:
+                return {**state, "writer_draft": answer_text}
         except json.JSONDecodeError:
             pass
 
-    # Fallback if JSON parsing fails: we force the headers manually so Reviewer sees them.
-    # We will assume the top half is analysis and the bottom half is evidence, or we just
-    # prepend the headers to prevent the Reviewer from complaining about missing headers.
-    forced_text = f"### Analysis\n(Analysis merged with evidence due to formatting error)\n\n### Document Evidence\n{raw}"
-    return {**state, "writer_draft": forced_text}
+    return {**state, "writer_draft": raw.strip()}
 
 
 # ── Agent 5: Reviewer ─────────────────────────────────────────────────────────
@@ -398,36 +438,28 @@ def reviewer_agent(state: PolicyState) -> PolicyState:
 
     writer_draft = state.get("writer_draft", "")
 
+    needs_cites = citations_required(state)
+
     messages = [
         SystemMessage(content=(
-            "You are a senior policy QA reviewer. You perform TWO checks:\n\n"
-            "## CHECK 1 — FACT ACCURACY:\n"
-            "For each fact in the draft, verify it exists in the source evidence chunks.\n"
-            "- If a fact IS in the source evidence → it is VALID. Do not touch it.\n"
-            "- If a fact is completely ABSENT from ALL source chunks → flag it for removal.\n\n"
-            "## CHECK 1.2 — STRICT SEPARATION OF THEORY AND EVIDENCE:\n"
-            "If the Writer provides a theoretical analysis, it MUST be under an '### Analysis' header. All document facts MUST be under a '### Document Evidence' header formatted as strict bullet points. If you see document facts mixed into the theoretical analysis, or theory/assumptions mixed into the document evidence, you MUST rewrite the answer to separate them.\n\n"
-            "## CHECK 1.5 — OVERREACH PREVENTION:\n"
-            "Verify that the Writer did not draw conclusions, assume intent, or infer causal links that are not explicitly stated in the text. If the Writer inferred a connection that isn't literal, rewrite the answer to remove the inference.\n\n"
-            "## CHECK 1.6 — NO CROSS-DOCUMENT SYNTHESIS:\n"
-            "If the Writer attempts to build a unified argument by connecting a fact from Document A to a fact from Document B, that is an unauthorized synthesis! You MUST rewrite the answer to completely isolate the facts into unrelated, separate bullet points. Additionally, if the Writer adds any summarizing or concluding sentence at the end of a paragraph, delete it entirely.\n\n"
-            "## CHECK 2 — COMPLETENESS:\n"
-            "Did the Writer answer ALL parts of the user's question?\n"
-            "If any part of the question was missed, add the missing information from the source evidence.\n\n"
-            "## CRITICAL RULE — NO CROSS-DOCUMENT PANIC:\n"
-            "Corporate policy documents share standard terms: '1 year recovery', 'clawback', "
-            "'settling-in bonus', 'relocation bonus'. If Document A and Document B both mention "
-            "'one year recovery' — this is completely NORMAL. Do NOT flag this as a hallucination. "
-            "Only flag something if it is 100% absent from ALL source evidence chunks provided.\n\n"
+            "You are a senior policy QA reviewer.\n\n"
+            f"{ANSWER_ON_POINT_RULES}\n"
+            f"{INLINE_CITATION_RULES if needs_cites else ''}\n"
+            "## CHECK 1 — ON-POINT: Does the draft directly answer the CORE QUESTION in its opening?\n\n"
+            "## CHECK 2 — PER-LINE CITATIONS:\n"
+            "If citations are required, EVERY line/bullet containing a document fact MUST end with "
+            "(Source: filename.ext). Rewrite any line missing its source. Remove bottom-only source lists.\n\n"
+            "## CHECK 3 — FACT ACCURACY:\n"
+            "Verify each cited fact exists in source chunks.\n\n"
+            "## CHECK 4 — RELEVANCE:\n"
+            "Remove facts that do not help answer the core question.\n\n"
             "## RESPONSE FORMAT (JSON only):\n"
-            "{\"approved\": true, \"notes\": \"All facts verified. Answer is complete.\", "
-            "\"final_answer\": \"<copy draft exactly>\"}\n"
-            "OR if you found a genuine error OR a missing part:\n"
-            "{\"approved\": false, \"notes\": \"<what specifically is wrong or missing>\", "
-            "\"final_answer\": \"<corrected/completed version>\"}\n"
+            '{"approved": true, "notes": "...", "final_answer": "<copy or corrected draft>"}\n'
         )),
         HumanMessage(content=(
-            f"USER QUESTION: {state['query']}\n\n"
+            f"CORE QUESTION: {state.get('core_question', state['query'])}\n"
+            f"CITATIONS REQUIRED ON EACH FACT LINE: {needs_cites}\n\n"
+            f"ORIGINAL USER QUERY: {state['query']}\n\n"
             f"DRAFT ANSWER:\n{writer_draft}\n\n"
             f"SOURCE EVIDENCE:\n{evidence}\n\n"
             "Respond with JSON only."
@@ -523,6 +555,8 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     
     history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in (state.get("chat_history") or [])[-4:]])
     
+    uploaded_files_str = ", ".join(state.get("uploaded_files", [])) or "uploaded files"
+
     prompt = f"""You are a senior Python Data Analyst. 
     DataFrames are available as variables: {df_vars}
     Schemas: 
@@ -533,12 +567,15 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     
     USER QUERY: {state['query']}
     
+    CORE QUESTION (what you must answer): {state.get('core_question', state['query'])}
+    
     Write Python code to solve this. Assign your final string output to a variable named `final_answer`.
     CRITICAL RULE 1: Whenever working with dates or timestamps, you MUST convert the columns using `pd.to_datetime(col, errors='coerce', utc=True)` before performing any time-based operations to prevent formatting crashes.
     CRITICAL RULE 2: If searching for specific names, IDs, or string values, use safe pandas filtering (e.g. `.str.contains(..., na=False)`) instead of strict exact matches, and handle empty results gracefully by assigning "No matching records found" to `final_answer` instead of throwing an error.
-    CRITICAL RULE 3: By default, you MUST analyze and cross-reference data across ALL provided DataFrames. If there are MULTIPLE DataFrames, explicitly mention their names in your `final_answer`. If there is only ONE DataFrame provided, do NOT mention its name. ONLY restrict your analysis to a single file if the user explicitly asks about that specific file.
+    CRITICAL RULE 3: By default, analyze and cross-reference data across ALL provided DataFrames. ONLY restrict your analysis to a single file if the user explicitly asks about that specific file. Do NOT list internal table variable names in your final_answer.
     CRITICAL RULE 4: ABSOLUTELY DO NOT use the backtick character (`) ANYWHERE in your Python code. Not in strings, not in comments, not in replace() functions. The presence of any backtick inside your code will break the code parser and cause a fatal SyntaxError. Use standard quotes instead.
-    CRITICAL RULE 5: DO NOT HALLUCINATE. If the user asks a theoretical question that cannot be calculated using the provided DataFrames, set `final_answer = 'ERROR: Cannot calculate this using the provided tables.'` Do NOT invent numbers or facts inside the python script.
+    CRITICAL RULE 5: DO NOT HALLUCINATE numbers. Before giving up, you MUST: (a) clean numeric columns (strip $, commas, %, parentheses and convert to float), (b) try flexible string matching with .str.contains(..., case=False, na=False), and (c) call search_documents with the user's question to pull facts from PDF/Word text. Only if tables AND document search both lack the needed data, set final_answer to a short message explaining what specific metric or field could not be found — do NOT dump a list of all table names.
+    CRITICAL RULE 6: Format final_answer with one fact per line. Each line containing a number or metric MUST end with (Source: filename.ext). Cite original uploaded files ({uploaded_files_str}), NOT internal extracted table CSV names.
     HYBRID RAG SEARCH: You have access to a function `search_documents(query: str) -> str`. You can call this inside your python code to search the uploaded PDFs/Word/Text documents for policies or rules, and then use those rules to filter your DataFrames!
     Respond ONLY with the Python code in a ```python ... ``` block.
     """
@@ -687,32 +724,28 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
     if state.get("data_critic_feedback") and state["data_critic_feedback"] not in ["PASS", "PASS_LIMIT_REACHED"]:
         feedback_str = f"CRITIC REJECTION - YOU HALLUCINATED: {state['data_critic_feedback']}\nYou MUST rewrite your answer without inventing facts. If you don't have the data, state that you don't have it.\n\n"
 
-    if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"4. STRICT FILE CITATIONS ({', '.join(state['uploaded_files'])}): NEVER list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of data you provide (e.g., 'Revenue grew by 10% (Source: data.csv)'). Failure to cite the specific file for each metric is unacceptable.\n"
-    elif len(state.get("uploaded_files", [])) == 1:
-        file_rule = "4. EXPLICIT FILE NAMES: There is only one file uploaded. Do NOT mention its name in your answer.\n"
-    else:
-        file_rule = ""
+    uploaded = ", ".join(state.get("uploaded_files", [])) or "uploaded files"
 
     messages = [
         SystemMessage(content=(
-            "You are a brilliant, highly intelligent Senior Data Scientist. When presented with raw mathematical results or data extracts, DO NOT just regurgitate the numbers like a mindless robot.\n\n"
-            "## ADAPTIVE FORMATTING RULES:\n"
-            "1. ADAPT TO THE QUERY: Do not use the exact same template for every answer. If the user asks a simple question (e.g., 'How many leads?'), provide a short, natural 1-2 sentence answer. If the question is complex (e.g., 'Analyze the funnel'), provide a deeper, structured breakdown.\n"
-            "2. ORGANIC INSIGHTS: Provide business context and interpretation naturally woven into your response. Do not force a hardcoded 'Analyst Insight:' header at the bottom of every message.\n"
-            "3. STRICT RELEVANCE: Answer ONLY what the user explicitly asked. Do NOT add unsolicited explanations, tutorials (like 'Why this works'), or business strategy unless specifically requested. If the user asks for code and output, give ONLY code and output.\n"
-            f"{file_rule}"
-            "5. NO BOILERPLATE: Never output 'Status: Active', file paths, column lists, or 'System Notes'.\n"
-            "6. ZERO HALLUCINATION CONTRACT: You must NEVER invent, assume, or hallucinate numbers to fulfill a user's hypothetical scenario. If a result is 0 (e.g., 0 conversions, 0 sales), report exactly 0. If data is missing to answer a strategy question, state that the data is missing. Never fabricate statistics.\n"
-            "7. DOCUMENT NAMES NOT TABLE NAMES: Never use terms like 'Table 1', 'Table 2', or 'the dataframe' in your final answer. Always refer to the exact source document name.\n"
-            "8. ORIGINAL PDF CITAIONS: If a data source has an internal extracted name like 'Report_p2_table1.csv' or 'Report_table1', you MUST clean it up and cite the original document name instead (e.g. 'Report.pdf'). Do NOT expose internal '_table' or '_p2' artifacts to the user."
+            "You are a brilliant Senior Data Scientist formatting computed results for the user.\n\n"
+            f"{ANSWER_ON_POINT_RULES}\n"
+            f"{INLINE_CITATION_RULES}\n"
+            "## FORMATTING RULES:\n"
+            "1. Lead with a direct answer to the core question — not a data dump.\n"
+            "2. Every line with a computed number or metric MUST end with (Source: filename.ext).\n"
+            "3. Cite the original uploaded document name, not internal extracted table CSV names.\n"
+            "4. ZERO HALLUCINATION: Never invent numbers. Report exactly what the computation returned.\n"
+            "5. If data is missing, say so clearly on its own line (no citation needed for that line).\n"
+            f"Uploaded files in this session: {uploaded}\n"
         )),
         *history_messages,
         HumanMessage(content=(
             f"{feedback_str}"
-            f"USER QUESTION: {state['query']}\n\n"
+            f"CORE QUESTION: {state.get('core_question', state['query'])}\n"
+            f"ORIGINAL USER QUERY: {state['query']}\n\n"
             f"RAW DATA RESULTS:\n{raw_result}\n\n"
-            "Write a direct, clean answer now."
+            "Write a direct, on-point answer now."
         ))
     ]
 
@@ -737,15 +770,18 @@ def data_critic_agent(state: PolicyState) -> PolicyState:
         
     messages = [
         SystemMessage(content=(
-            "You are a ruthless QA Critic for an Enterprise AI system. Your ONLY job is to verify that the Writer Agent did not hallucinate numbers or statistics.\n"
-            "You will receive the RAW PYTHON OUTPUT and the WRITER'S DRAFT.\n"
-            "1. Extract every single number, percentage, count, and statistic from the WRITER'S DRAFT.\n"
-            "2. Cross-reference them against the RAW PYTHON OUTPUT.\n"
-            "3. If the WRITER'S DRAFT contains ANY numbers or statistical claims that are NOT present in or immediately deducible from the RAW PYTHON OUTPUT, you must REJECT IT.\n\n"
+            "You are a ruthless QA Critic for an Enterprise AI system.\n"
+            "You will receive the RAW PYTHON OUTPUT and the WRITER'S DRAFT.\n\n"
+            f"{INLINE_CITATION_RULES}\n"
+            "Checks:\n"
+            "1. Extract every number, percentage, count, and statistic from the WRITER'S DRAFT.\n"
+            "2. Cross-reference them against the RAW PYTHON OUTPUT — reject hallucinated numbers.\n"
+            "3. REJECT if any factual line with a number/metric is missing (Source: filename.ext) at line end.\n"
+            "4. REJECT if sources are grouped at the bottom instead of attached to each line.\n\n"
             "Respond ONLY in valid JSON format:\n"
             "{\n"
             '  "is_hallucinated": boolean,\n'
-            '  "feedback": "If hallucinated, list the exact numbers that are fake and tell the writer to remove them. If not hallucinated, leave empty."\n'
+            '  "feedback": "If rejected, explain missing citations or fake numbers. If approved, leave empty."\n'
             "}"
         )),
         HumanMessage(content=(
@@ -784,10 +820,10 @@ def data_critic_agent(state: PolicyState) -> PolicyState:
 
 def conversational_agent(state: PolicyState, session_id: str = None) -> PolicyState:
     """
-    Handles chit-chat and clarification when the user asks about something
-    out of context (e.g. asking about PDFs when only CSVs are uploaded).
+    Handles direct-reasoning questions, greetings, and any query that does
+    not require grounding in uploaded files.
     """
-    print("--> [Conversational Agent] Handling general/clarification query...")
+    print("--> [Conversational Agent] Handling direct-reasoning query...")
     
     file_context_blocks = []
     if session_id:
@@ -813,25 +849,19 @@ def conversational_agent(state: PolicyState, session_id: str = None) -> PolicySt
         elif role == "assistant":
             history_messages.append(AIMessage(content=content))
 
-    if len(state.get("uploaded_files", [])) > 1:
-        file_rule = f"STRICT RULE FOR MULTIPLE FILES ({', '.join(state['uploaded_files'])}): NEVER list these file names at the beginning of your answer. You MUST use inline citations for EVERY piece of info you provide (e.g., 'You have 5 vacation days (Source: policy.docx)').\n"
-    elif len(state.get("uploaded_files", [])) == 1:
-        file_rule = "If the user's question relates to the uploaded files, do NOT mention the file name.\n"
-    else:
-        file_rule = ""
-
     messages = [
         SystemMessage(content=(
-            "You are a helpful conversational AI assistant.\n"
-            f"The user has currently uploaded the following files: {file_list_str}\n\n"
-            f"{file_rule}"
-            "If the user asks about a document type (like a PDF or Policy document) that they did NOT upload, "
-            "but they DID upload other files (like CSVs), politely point this out.\n"
-            "If the user's question is completely unrelated to the system, just respond conversationally and helpfully.\n"
-            "Keep your responses concise and natural."
+            "You are an expert analyst assistant.\n\n"
+            f"{ANSWER_ON_POINT_RULES}\n"
+            f"Uploaded files available (use ONLY if the question explicitly requires them): {file_list_str}\n\n"
+            "This question was classified as NOT requiring uploaded files. "
+            "Answer using reasoning and general knowledge. Do not force document citations."
         )),
         *history_messages,
-        HumanMessage(content=state['query'])
+        HumanMessage(content=(
+            f"CORE QUESTION: {state.get('core_question', state['query'])}\n\n"
+            f"ORIGINAL USER QUERY: {state['query']}"
+        ))
     ]
 
     response = llm.invoke(messages)
@@ -867,6 +897,10 @@ def build_graph(vector_store, session_id: str = None):
     def conversational_node(state: PolicyState) -> PolicyState:
         return conversational_agent(state, session_id)
 
+    def data_analysis_fallback_node(state: PolicyState) -> PolicyState:
+        print("--> [Fallback] Table analysis could not answer; searching document text...")
+        return {**state, "data_analysis_result": ""}
+
     graph = StateGraph(PolicyState)
 
     def router_node(state: PolicyState) -> PolicyState:
@@ -879,16 +913,20 @@ def build_graph(vector_store, session_id: str = None):
     graph.add_node("writer",        writer_agent)
     graph.add_node("reviewer",      reviewer_agent)
     graph.add_node("data_analysis", data_analysis_node)
+    graph.add_node("data_analysis_fallback", data_analysis_fallback_node)
     graph.add_node("data_writer",   data_writer_node)
     graph.add_node("data_critic",   data_critic_node)
     graph.add_node("conversational", conversational_node)
 
+    def route_after_data_analysis(state: PolicyState):
+        result = str(state.get("data_analysis_result", ""))
+        if result.startswith("ERROR:") or "Cannot calculate this using the provided tables" in result:
+            return "fallback"
+        return "data_writer"
+
     def route_after_router(state: PolicyState):
-        """
-        Since the LLM Router now has Universal Context Injection, 
-        we trust it completely to pick the correct pipeline.
-        We have removed the hardcoded file-type guards.
-        """
+        if state.get("answer_mode") == "direct" or not state.get("requires_uploads", True):
+            return "conversational"
         if state.get("intent") == "data_analysis":
             return "data_analysis"
         elif state.get("intent") == "general":
@@ -921,8 +959,16 @@ def build_graph(vector_store, session_id: str = None):
     graph.add_edge("writer",    "reviewer")
     graph.add_edge("reviewer",  END)
     
-    # Data Analysis path (with Critic Loop)
-    graph.add_edge("data_analysis", "data_writer")
+    # Data Analysis path (with Critic Loop, or fallback to text RAG)
+    graph.add_conditional_edges(
+        "data_analysis",
+        route_after_data_analysis,
+        {
+            "data_writer": "data_writer",
+            "fallback": "data_analysis_fallback",
+        }
+    )
+    graph.add_edge("data_analysis_fallback", "retrieval")
     graph.add_edge("data_writer", "data_critic")
     graph.add_conditional_edges(
         "data_critic",
@@ -958,6 +1004,9 @@ def run_query(
         "query": query,
         "intent": "",
         "urgency": "",
+        "answer_mode": "",
+        "core_question": "",
+        "requires_uploads": True,
         "search_queries": [query],
         "retrieved_chunks": [],
         "data_analysis_result": "",

@@ -8,6 +8,9 @@ import uuid
 import shutil
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 st.set_page_config(
     page_title="MultiAgent System",
@@ -195,6 +198,9 @@ for k, v in {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def get_active_api_key() -> str:
+    return (st.session_state.get("api_key") or os.getenv("GOOGLE_API_KEY") or "").strip()
+
 def save_session_meta(session_id, meta):
     with open(SESSIONS_DIR / f"{session_id}.json", "w") as f:
         json.dump(meta, f)
@@ -291,7 +297,7 @@ def add_new_docs(uploaded_files, missing_api_key=False):
         dest.write_bytes(f.getbuffer())
         file_names.append(f.name)
         
-    api_key = st.session_state.get("api_key")
+    api_key = get_active_api_key()
     # Build a fresh memory index JUST for these newly uploaded files
     docs = load_and_chunk_docs(str(doc_dir), session_id=session_id, api_key=api_key)
     if not docs:
@@ -363,7 +369,7 @@ def handle_query(query: str):
     with st.chat_message("user"):
         st.markdown(query)
 
-    active_key = st.session_state.get("api_key")
+    active_key = get_active_api_key()
     if not active_key:
         msg = "⚠️ **Please enter your Gemini API Key in the Settings sidebar to continue.**"
         with st.chat_message("assistant"):
@@ -457,7 +463,7 @@ with st.sidebar:
         current_file_names = sorted([f.name for f in uploaded])
         if st.button("Upload & Chat", key="btn_upload_chat"):
             st.session_state.last_processed_files = current_file_names
-            if not st.session_state.get("api_key"):
+            if not get_active_api_key():
                 add_new_docs(uploaded, missing_api_key=True)
             else:
                 add_new_docs(uploaded)
