@@ -183,11 +183,6 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
     if intent == "general" and any(w in query_lower for w in question_words):
         intent = "document_search"
 
-    # PYTHON-LEVEL OVERRIDE: Force 'data_analysis' for financial metrics
-    financial_words = ["ebitda", "revenue", "profit", "margin", "growth", "loss", "calculate", "average", "sum", "total", "table", "csv"]
-    if intent == "document_search" and any(w in query_lower for w in financial_words):
-        intent = "data_analysis"
-
     return {
         **state,
         "intent": intent,
@@ -516,6 +511,7 @@ def data_analysis_agent(state: PolicyState, session_id: str, vector_store=None) 
     CRITICAL RULE 2: If searching for specific names, IDs, or string values, use safe pandas filtering (e.g. `.str.contains(..., na=False)`) instead of strict exact matches, and handle empty results gracefully by assigning "No matching records found" to `final_answer` instead of throwing an error.
     CRITICAL RULE 3: By default, you MUST analyze and cross-reference data across ALL provided DataFrames. If there are MULTIPLE DataFrames, explicitly mention their names in your `final_answer`. If there is only ONE DataFrame provided, do NOT mention its name. ONLY restrict your analysis to a single file if the user explicitly asks about that specific file.
     CRITICAL RULE 4: ABSOLUTELY DO NOT use the backtick character (`) ANYWHERE in your Python code. Not in strings, not in comments, not in replace() functions. The presence of any backtick inside your code will break the code parser and cause a fatal SyntaxError. Use standard quotes instead.
+    CRITICAL RULE 5: DO NOT HALLUCINATE. If the user asks a theoretical question that cannot be calculated using the provided DataFrames, set `final_answer = 'ERROR: Cannot calculate this using the provided tables.'` Do NOT invent numbers or facts inside the python script.
     HYBRID RAG SEARCH: You have access to a function `search_documents(query: str) -> str`. You can call this inside your python code to search the uploaded PDFs/Word/Text documents for policies or rules, and then use those rules to filter your DataFrames!
     Respond ONLY with the Python code in a ```python ... ``` block.
     """
@@ -634,7 +630,8 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
     if raw_result.startswith("The query could not be answered") or \
        raw_result.startswith("The code executed but") or \
        raw_result.startswith("No tabular data") or \
-       raw_result.startswith("Failed to load"):
+       raw_result.startswith("Failed to load") or \
+       raw_result.startswith("ERROR:"):
         return {**state, "final_answer": raw_result}
 
     llm = get_gemini(api_key=state.get('api_key'), temperature=0.3)
