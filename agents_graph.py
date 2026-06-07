@@ -148,7 +148,8 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             "Rules:\n"
             "- Choose 'data_analysis' if the query asks to calculate, filter, count, or list records from the Tabular Data, asks to analyze data, OR if the user asks a HYBRID question that requires BOTH reading policy documents and doing math on data. (The data analysis agent has a built-in search_documents tool it can use for hybrid queries).\n"
             "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word).\n"
-            "- Choose 'general' ONLY if the CURRENT USER QUERY is a casual greeting completely unrelated to the files. IGNORE the conversation history when deciding the intent. If the current query is about the documents, you MUST choose document_search or data_analysis!\n"
+            "- Choose 'general' ONLY if the CURRENT USER QUERY is a casual greeting completely unrelated to the files. IGNORE the conversation history when deciding the intent. If the current query asks a question, requests a summary, or mentions any topic that could potentially be in the documents, you MUST choose document_search!\n"
+            "CRITICAL RULE: Never choose 'general' for questions about data, policies, rules, or summaries. 'general' is ONLY for 'hi', 'hello', or asking what you are.\n"
         )),
         HumanMessage(content=(
             f"CONVERSATION HISTORY:\n{history_str}\n\n"
@@ -175,7 +176,7 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             pass
 
     # Fallback
-    return {**state, "intent": "general", "urgency": "medium", "search_queries": [state["query"]]}
+    return {**state, "intent": "document_search", "urgency": "medium", "search_queries": [state["query"]]}
 
 
 # ── Agent 2: Retrieval ────────────────────────────────────────────────────────
