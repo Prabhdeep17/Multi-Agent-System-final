@@ -331,6 +331,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
             "only state connections that are EXPLICITLY written in the key facts. "
             "Do not create narrative bridges between unrelated documents.\n"
             "- DOCUMENT NAMES NOT NUMBERS: Never use terms like 'Document 1', 'File A', or 'the first file'. Always refer to the exact source document name (e.g. 'According to policy.pdf...').\n"
+            "- ORIGINAL PDF CITAIONS: If a data source has an internal extracted name like 'Report_p2_table1.csv' or 'Report_table1', you MUST clean it up and cite the original document name instead (e.g. 'Report.pdf'). Do NOT expose internal '_table' or '_p2' artifacts to the user.\n"
         )),
         *history_messages,
         HumanMessage(content=(
@@ -686,7 +687,8 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
             f"{file_rule}"
             "5. NO BOILERPLATE: Never output 'Status: Active', file paths, column lists, or 'System Notes'.\n"
             "6. ZERO HALLUCINATION CONTRACT: You must NEVER invent, assume, or hallucinate numbers to fulfill a user's hypothetical scenario. If a result is 0 (e.g., 0 conversions, 0 sales), report exactly 0. If data is missing to answer a strategy question, state that the data is missing. Never fabricate statistics.\n"
-            "7. DOCUMENT NAMES NOT TABLE NAMES: Never use terms like 'Table 1', 'Table 2', or 'the dataframe' in your final answer. Always refer to the exact source document name (e.g. 'According to sales.csv...')."
+            "7. DOCUMENT NAMES NOT TABLE NAMES: Never use terms like 'Table 1', 'Table 2', or 'the dataframe' in your final answer. Always refer to the exact source document name.\n"
+            "8. ORIGINAL PDF CITAIONS: If a data source has an internal extracted name like 'Report_p2_table1.csv' or 'Report_table1', you MUST clean it up and cite the original document name instead (e.g. 'Report.pdf'). Do NOT expose internal '_table' or '_p2' artifacts to the user."
         )),
         *history_messages,
         HumanMessage(content=(
