@@ -148,7 +148,7 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             "Rules:\n"
             "- Choose 'data_analysis' if the query asks to calculate, filter, count, or list records from the Tabular Data, asks to analyze data, OR if the user asks a HYBRID question that requires BOTH reading policy documents and doing math on data. (The data analysis agent has a built-in search_documents tool it can use for hybrid queries).\n"
             "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word).\n"
-            "- Choose 'general' if the query asks for a file type (like PDFs) that is MISSING from the uploaded files, OR if it is a casual greeting completely unrelated to any uploaded files.\n"
+            "- Choose 'general' ONLY if the CURRENT USER QUERY is a casual greeting completely unrelated to the files. IGNORE the conversation history when deciding the intent. If the current query is about the documents, you MUST choose document_search or data_analysis!\n"
         )),
         HumanMessage(content=(
             f"CONVERSATION HISTORY:\n{history_str}\n\n"
