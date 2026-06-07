@@ -162,21 +162,33 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
     raw = parse_gemini_content(response.content)
 
     # Robust JSON extraction
+    intent = "document_search"  # Default fallback
+    urgency = "medium"
+    search_queries = [state["query"]]
+
     match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
     if match:
         try:
             parsed = json.loads(match.group())
-            return {
-                **state,
-                "intent": parsed.get("intent", "general"),
-                "urgency": parsed.get("urgency", "medium"),
-                "search_queries": parsed.get("search_queries", [state["query"]])
-            }
+            intent = parsed.get("intent", "document_search")
+            urgency = parsed.get("urgency", "medium")
+            search_queries = parsed.get("search_queries", [state["query"]])
         except json.JSONDecodeError:
             pass
 
-    # Fallback
-    return {**state, "intent": "document_search", "urgency": "medium", "search_queries": [state["query"]]}
+    # PYTHON-LEVEL OVERRIDE: Never allow 'general' if the user is asking a question!
+    # This prevents the LLM from getting confused by chat history and hallucinating.
+    query_lower = state['query'].lower()
+    question_words = ["?", "how", "what", "where", "when", "why", "who", "which", "explain", "summarize", "tell me", "detail", "does", "is", "are", "can", "could", "would", "should"]
+    if intent == "general" and any(w in query_lower for w in question_words):
+        intent = "document_search"
+
+    return {
+        **state,
+        "intent": intent,
+        "urgency": urgency,
+        "search_queries": search_queries
+    }
 
 
 # ── Agent 2: Retrieval ────────────────────────────────────────────────────────
