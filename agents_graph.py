@@ -424,24 +424,8 @@ def reviewer_agent(state: PolicyState) -> PolicyState:
             reviewer_notes = parsed.get("notes", "All facts verified.")
             proposed_answer = parsed.get("final_answer", writer_draft)
 
-            # ── PYTHON DELETION SAFETY NET ──────────────────────────────────
-            # If the Reviewer's answer is >40% shorter than the Writer's draft,
-            # it means the Reviewer accidentally deleted correct content.
-            # In this case, REJECT the Reviewer's output and restore the Writer's draft.
-            draft_words = len(writer_draft.split())
-            proposed_words = len(proposed_answer.split())
-
-            if draft_words > 20 and proposed_words < (draft_words * 0.6):
-                print(f"  [Deletion Guard] Reviewer cut {draft_words - proposed_words} words "
-                      f"({draft_words} → {proposed_words}). Restoring Writer draft.")
-                final_answer = writer_draft
-                is_approved = True
-                reviewer_notes = f"[Guard Active] Reviewer attempted to shorten the answer. " \
-                                 f"Writer's complete draft restored. Reviewer note: {reviewer_notes}"
-            else:
-                # Reviewer's output is acceptable — use it
-                final_answer = proposed_answer
-            # ── END SAFETY NET ──────────────────────────────────────────────
+            # Use the Reviewer's output directly, trusting it to remove hallucinations
+            final_answer = proposed_answer
 
         except json.JSONDecodeError:
             pass  # Parsing failed, defaults already set to Writer's draft
