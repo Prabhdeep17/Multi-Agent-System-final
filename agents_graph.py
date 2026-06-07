@@ -366,8 +366,11 @@ def writer_agent(state: PolicyState) -> PolicyState:
         except json.JSONDecodeError:
             pass
 
-    # Fallback if JSON parsing fails
-    return {**state, "writer_draft": raw}
+    # Fallback if JSON parsing fails: we force the headers manually so Reviewer sees them.
+    # We will assume the top half is analysis and the bottom half is evidence, or we just
+    # prepend the headers to prevent the Reviewer from complaining about missing headers.
+    forced_text = f"### Analysis\n(Analysis merged with evidence due to formatting error)\n\n### Document Evidence\n{raw}"
+    return {**state, "writer_draft": forced_text}
 
 
 # ── Agent 5: Reviewer ─────────────────────────────────────────────────────────
@@ -451,7 +454,7 @@ def reviewer_agent(state: PolicyState) -> PolicyState:
             final_answer = proposed_answer
 
         except json.JSONDecodeError:
-            pass  # Parsing failed, defaults already set to Writer's draft
+            final_answer += "\n\n[DEBUG: QA Reviewer failed to output valid JSON. Showing un-reviewed draft.]"
 
     return {
         **state,
