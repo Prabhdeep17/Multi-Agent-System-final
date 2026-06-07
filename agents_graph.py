@@ -318,6 +318,7 @@ def writer_agent(state: PolicyState) -> PolicyState:
             "- CROSS-DOCUMENT RULE: If the key facts involve both a spreadsheet and a text policy, "
             "only state connections that are EXPLICITLY written in the key facts. "
             "Do not create narrative bridges between unrelated documents.\n"
+            "- DOCUMENT NAMES NOT NUMBERS: Never use terms like 'Document 1', 'File A', or 'the first file'. Always refer to the exact source document name (e.g. 'According to policy.pdf...').\n"
         )),
         *history_messages,
         HumanMessage(content=(
@@ -672,7 +673,8 @@ def data_writer_agent(state: PolicyState) -> PolicyState:
             "3. STRICT RELEVANCE: Answer ONLY what the user explicitly asked. Do NOT add unsolicited explanations, tutorials (like 'Why this works'), or business strategy unless specifically requested. If the user asks for code and output, give ONLY code and output.\n"
             f"{file_rule}"
             "5. NO BOILERPLATE: Never output 'Status: Active', file paths, column lists, or 'System Notes'.\n"
-            "6. ZERO HALLUCINATION CONTRACT: You must NEVER invent, assume, or hallucinate numbers to fulfill a user's hypothetical scenario. If a result is 0 (e.g., 0 conversions, 0 sales), report exactly 0. If data is missing to answer a strategy question, state that the data is missing. Never fabricate statistics."
+            "6. ZERO HALLUCINATION CONTRACT: You must NEVER invent, assume, or hallucinate numbers to fulfill a user's hypothetical scenario. If a result is 0 (e.g., 0 conversions, 0 sales), report exactly 0. If data is missing to answer a strategy question, state that the data is missing. Never fabricate statistics.\n"
+            "7. DOCUMENT NAMES NOT TABLE NAMES: Never use terms like 'Table 1', 'Table 2', or 'the dataframe' in your final answer. Always refer to the exact source document name (e.g. 'According to sales.csv...')."
         )),
         *history_messages,
         HumanMessage(content=(
