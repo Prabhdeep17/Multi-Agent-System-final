@@ -314,20 +314,22 @@ def writer_agent(state: PolicyState) -> PolicyState:
         SystemMessage(content=(
             "You are an expert financial and policy analyst. You write clearly, professionally, and logically.\n\n"
             "## SEPARATION OF THEORY AND EVIDENCE (CRITICAL):\n"
-            "If the user asks a theoretical, strategic, or analytical question, you MAY answer the conceptual part using your general knowledge. However, you MUST strictly separate your general reasoning from the raw document facts.\n"
-            "1. **### Analysis**: Answer the user's conceptual question here (e.g., explaining EBITDA vs Revenue).\n"
-            "2. **### Document Evidence**: List the relevant facts from the documents here. In this section, you are a robotic data extractor. You are STRICTLY FORBIDDEN from drawing new conclusions, assuming intent, or weaving disconnected facts together. Present facts as independent bullet points.\n\n"
+            "You MUST separate your general reasoning from raw document facts using strict JSON.\n"
+            "Your output MUST be a valid JSON object with EXACTLY two keys:\n"
+            "{\n"
+            "  \"analysis\": \"Your theoretical answer using general knowledge. Write in clear paragraphs.\",\n"
+            "  \"evidence\": \"Raw document facts strictly formatted as independent bullet points starting with '-' or '*'. Do NOT draw new conclusions or weave facts together.\"\n"
+            "}\n\n"
             "## FACTS-ONLY CONTRACT FOR EVIDENCE SECTION:\n"
             "- Do NOT infer or extrapolate beyond what is written in the source chunks.\n"
             "- Do NOT create causal relationships between facts from Document A and Document B.\n"
             "- If a fact is not in the key facts → it does not exist for this answer.\n\n"
             "## FORMAT RULES:\n"
-            "- Always use the headers '### Analysis' and '### Document Evidence' if applicable.\n"
             f"{file_rule}"
             "- Bold important numbers/limits using **bold**\n"
             "- Reference sources inline: [1], [2]\n"
             "- If a specific exception exists in the key facts, explicitly state that it overrides the general rule.\n"
-            "- If the key facts indicate that no relevant information was found, simply state: 'The provided documents do not contain the answer to this question.' Do NOT add any filler text.\n"
+            "- If the key facts indicate that no relevant information was found, set evidence to: 'The provided documents do not contain the answer to this question.'\n"
             "- CROSS-DOCUMENT RULE: If the key facts involve both a spreadsheet and a text policy, "
             "only state connections that are EXPLICITLY written in the key facts. "
             "Do not create narrative bridges between unrelated documents.\n"
@@ -339,14 +341,33 @@ def writer_agent(state: PolicyState) -> PolicyState:
             f"USER QUESTION: {state['query']}\n\n"
             f"ANALYST KEY FACTS:\n{state.get('key_facts', '')}\n\n"
             f"SOURCES AVAILABLE: {state.get('source_citations', '')}\n\n"
-            "Write the final answer now."
+            "Write the final answer now as a JSON object."
         ))
     ]
 
     response = llm.invoke(messages)
-    draft = parse_gemini_content(response.content)
+    raw = parse_gemini_content(response.content)
+    
+    # Try to parse the strict JSON output
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group())
+            analysis_text = parsed.get("analysis", "").strip()
+            evidence_text = parsed.get("evidence", "").strip()
+            
+            final_draft = ""
+            if analysis_text:
+                final_draft += f"### Analysis\n{analysis_text}\n\n"
+            if evidence_text:
+                final_draft += f"### Document Evidence\n{evidence_text}"
+                
+            return {**state, "writer_draft": final_draft.strip()}
+        except json.JSONDecodeError:
+            pass
 
-    return {**state, "draft_answer": draft}
+    # Fallback if JSON parsing fails
+    return {**state, "writer_draft": raw}
 
 
 # ── Agent 5: Reviewer ─────────────────────────────────────────────────────────
@@ -372,7 +393,7 @@ def reviewer_agent(state: PolicyState) -> PolicyState:
     for i, chunk in enumerate(evidence_chunks, 1):
         evidence += f"[{i}] {chunk['source']} (Page {chunk['page']}):\n{chunk['text'][:400]}\n\n"
 
-    writer_draft = state.get("draft_answer", "")
+    writer_draft = state.get("writer_draft", "")
 
     messages = [
         SystemMessage(content=(
