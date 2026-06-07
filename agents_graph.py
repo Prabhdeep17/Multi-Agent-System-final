@@ -146,8 +146,8 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
             '  "search_queries": ["query 1", "query 2"] (if document_search, provide semantic variations)\n'
             "}\n\n"
             "Rules:\n"
-            "- Choose 'data_analysis' if the query asks to calculate, filter, count, or list records from the Tabular Data, asks to analyze data, OR if the user asks a HYBRID question that requires BOTH reading policy documents and doing math on data. (The data analysis agent has a built-in search_documents tool it can use for hybrid queries).\n"
-            "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word).\n"
+            "- Choose 'data_analysis' if the query involves math, calculations, counting, financial metrics (revenue, EBITDA, margins, profits, growth, loss), analyzing trends, or referencing tables/data. If the query asks for ANY financial numbers from a Q-report or financial statement, you MUST choose data_analysis. Also choose this for HYBRID questions requiring both text policies and math.\n"
+            "- Choose 'document_search' if the query explicitly asks ONLY for text facts, policies, paragraphs, rules, or semantic knowledge found in the Text Documents (PDFs/Word) AND does NOT require analyzing numerical data or financial metrics.\n"
             "- Choose 'general' ONLY if the CURRENT USER QUERY is a casual greeting completely unrelated to the files. IGNORE the conversation history when deciding the intent. If the current query asks a question, requests a summary, or mentions any topic that could potentially be in the documents, you MUST choose document_search!\n"
             "CRITICAL RULE: Never choose 'general' for questions about data, policies, rules, or summaries. 'general' is ONLY for 'hi', 'hello', or asking what you are.\n"
         )),
@@ -182,6 +182,11 @@ def router_agent(state: PolicyState, session_id: str) -> PolicyState:
     question_words = ["?", "how", "what", "where", "when", "why", "who", "which", "explain", "summarize", "tell me", "detail", "does", "is", "are", "can", "could", "would", "should"]
     if intent == "general" and any(w in query_lower for w in question_words):
         intent = "document_search"
+
+    # PYTHON-LEVEL OVERRIDE: Force 'data_analysis' for financial metrics
+    financial_words = ["ebitda", "revenue", "profit", "margin", "growth", "loss", "calculate", "average", "sum", "total", "table", "csv"]
+    if intent == "document_search" and any(w in query_lower for w in financial_words):
+        intent = "data_analysis"
 
     return {
         **state,
